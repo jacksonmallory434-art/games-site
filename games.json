@@ -1,5 +1,18 @@
 [
   {
+    "slug": "2048",
+    "title": "2048",
+    "category": "Puzzle",
+    "thumb": "thumbs/2048.svg",
+    "embed": "games/2048/index.html",
+    "width": 540,
+    "height": 820,
+    "mobile": true,
+    "description": "The classic number-merging puzzle. Slide every tile on the board at once, and when two tiles with the same number touch, they combine into one. Keep merging to build bigger numbers and try to reach the 2048 tile before the board fills up.",
+    "howto": "Use the arrow keys or WASD to slide the tiles. On a phone, swipe in any direction. Press the New Game button to start over.",
+    "source": "Gabriele Cirulli (open source, MIT license)"
+  },
+  {
     "slug": "stacky-hero-master",
     "title": "Stacky Hero Master",
     "category": "Puzzle",
