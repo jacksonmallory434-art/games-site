@@ -11,5 +11,83 @@
     "description": "The classic number-merging puzzle. Slide every tile on the board at once, and when two tiles with the same number touch, they combine into one. Keep merging to build bigger numbers and try to reach the 2048 tile before the board fills up.",
     "howto": "Use the arrow keys or WASD to slide the tiles. On a phone, swipe in any direction. Press the New Game button to start over.",
     "source": "Gabriele Cirulli (open source, MIT license)"
+  },
+  {
+    "slug": "paper-plane",
+    "title": "Paper Plane",
+    "category": "Arcade",
+    "thumb": "thumbs/paper-plane.svg",
+    "embed": "games/paper-plane/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "Fold up, take off, and thread your paper plane between giant pencils on a sheet of graph paper. Every gap you clear is a point, and the pencils come faster the further you get.",
+    "howto": "Tap, click, or press Space (or the Up arrow) to give your plane a lift. Let go to glide down. Don't touch the pencils, the top, or the bottom.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "grid-snake",
+    "title": "Grid Snake",
+    "category": "Arcade",
+    "thumb": "thumbs/grid-snake.svg",
+    "embed": "games/grid-snake/index.html",
+    "width": 480,
+    "height": 540,
+    "mobile": true,
+    "description": "Classic snake on graph paper. Eat the red +1 dots to grow longer, and grab the gold +5 bonus before it disappears. The snake speeds up as it grows, so plan your turns.",
+    "howto": "Steer with the arrow keys or WASD. On a phone, swipe in the direction you want to go. Hitting a wall or your own tail ends the game.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "quick-maths",
+    "title": "Quick Maths",
+    "category": "Puzzle",
+    "thumb": "thumbs/quick-maths.svg",
+    "embed": "games/quick-maths/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "How many math problems can you solve in 60 seconds? Problems start easy and level up to bigger numbers, times tables, and division as your score climbs. Build a streak for bonus time.",
+    "howto": "Click or tap the right answer, or press 1 to 4 on your keyboard. Wrong answers cost 3 seconds. Every 5 correct in a row adds 2 seconds.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "memory-match",
+    "title": "Memory Match",
+    "category": "Puzzle",
+    "thumb": "thumbs/memory-match.svg",
+    "embed": "games/memory-match/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "Flip cards two at a time and find all eight matching pairs. Remember where each picture was hiding, and try to clear the board in as few moves as possible.",
+    "howto": "Click or tap a card to flip it, then pick a second card. Matching pairs stay face-up. Your fewest moves is saved as your best.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "target-rush",
+    "title": "Target Rush",
+    "category": "Arcade",
+    "thumb": "thumbs/target-rush.svg",
+    "embed": "games/target-rush/index.html",
+    "width": 640,
+    "height": 480,
+    "mobile": true,
+    "description": "Targets pop up all over the board and shrink away fast. Hit as many as you can in 30 seconds, and aim for the center: bullseyes are worth 3 points. Targets get smaller and quicker as the clock runs down.",
+    "howto": "Click or tap the targets. Hits near the center score more. Misses don't cost points, but they hurt your accuracy.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "brick-bash",
+    "title": "Brick Bash",
+    "category": "Arcade",
+    "thumb": "thumbs/brick-bash.svg",
+    "embed": "games/brick-bash/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "Bounce the ball off your paddle and smash every brick on the board. Clear a level to move on to more rows, faster balls, and tough bricks that take two hits.",
+    "howto": "Move the paddle with your mouse, your finger, or the arrow keys. Click, tap, or press Space to launch. Where the ball hits the paddle changes its angle. You have 3 lives.",
+    "source": "MathAdvice"
   }
 ]

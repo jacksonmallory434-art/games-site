@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Paper Plane</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #12131a; overflow: hidden; touch-action: none; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Paper Plane — a MathAdvice original.
+const W = 480, H = 640;
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H), d = devicePixelRatio || 1;
+  c.style.width = W * s + 'px'; c.style.height = H * s + 'px';
+  c.width = W * s * d; c.height = H * s * d;
+  ctx.setTransform(s * d, 0, 0, s * d, 0, 0);
+}
+addEventListener('resize', fit); fit();
+
+const KEY = 'ma-paperplane-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+
+let state, plane, pencils, score, best = getBest(), timer, speed, scroll;
+function reset() {
+  state = 'ready';
+  plane = { x: 120, y: H / 2, vy: 0 };
+  pencils = []; score = 0; timer = 0; speed = 2.6; scroll = 0;
+}
+reset();
+
+function flap() {
+  if (state === 'ready') state = 'play';
+  if (state === 'play') plane.vy = -7.2;
+  else if (state === 'over' && timer > 30) reset();
+}
+addEventListener('keydown', e => { if (['Space', 'ArrowUp', 'KeyW', 'Enter'].includes(e.code)) { e.preventDefault(); flap(); } });
+c.addEventListener('pointerdown', e => { e.preventDefault(); flap(); });
+
+function addPencil() {
+  const gap = Math.max(140, 175 - score * 1.5);
+  const top = 70 + Math.random() * (H - 140 - gap);
+  pencils.push({ x: W + 10, top, gap, w: 64, passed: false });
+}
+
+function hit(p) {
+  // The pencil tips are pointy, so allow a little overlap with them.
+  const r = 12, give = 8;
+  const inX = plane.x + r > p.x + 4 && plane.x - r < p.x + p.w - 4;
+  return inX && (plane.y - r < p.top - give || plane.y + r > p.top + p.gap + give);
+}
+
+function update(dt) {
+  scroll = (scroll + speed * dt * (state === 'over' ? 0 : 1)) % 32;
+  timer += dt;
+  if (state === 'ready') { plane.y = H / 2 + Math.sin(timer / 10) * 10; return; }
+  if (state === 'over') { if (plane.y < H - 20) { plane.vy += 0.5 * dt; plane.y += plane.vy * dt; } return; }
+  plane.vy = Math.min(plane.vy + 0.42 * dt, 10);
+  plane.y += plane.vy * dt;
+  if (timer > 95) { timer = 0; addPencil(); }
+  for (const p of pencils) {
+    p.x -= speed * dt;
+    if (!p.passed && p.x + p.w < plane.x) { p.passed = true; score++; speed = Math.min(4.2, 2.6 + score * 0.04); }
+    if (hit(p)) gameOver();
+  }
+  pencils = pencils.filter(p => p.x > -80);
+  if (plane.y > H - 14 || plane.y < 0) gameOver();
+}
+function gameOver() {
+  if (state !== 'play') return;
+  state = 'over'; timer = 0;
+  if (score > best) { best = score; setBest(best); }
+}
+
+function drawPaper() {
+  ctx.fillStyle = '#f7f5ee'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#d6e4f0'; ctx.lineWidth = 1;
+  for (let x = -scroll; x < W; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+}
+function drawPencil(x, y, w, h, pointDown) {
+  // body
+  ctx.fillStyle = '#ffcc33'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#e6b422'; ctx.fillRect(x + w * 0.66, y, w * 0.34, h);
+  const tipLen = 34;
+  if (pointDown) {
+    ctx.fillStyle = '#f2a7b5'; ctx.fillRect(x, y, w, Math.min(18, h)); // eraser at top edge
+    ctx.fillStyle = '#e8d3a8'; ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w / 2, y + h + tipLen); ctx.fill();
+    ctx.fillStyle = '#3a3a48'; ctx.beginPath(); ctx.moveTo(x + w * 0.38, y + h + tipLen * 0.75); ctx.lineTo(x + w * 0.62, y + h + tipLen * 0.75); ctx.lineTo(x + w / 2, y + h + tipLen); ctx.fill();
+  } else {
+    ctx.fillStyle = '#f2a7b5'; ctx.fillRect(x, y + h - Math.min(18, h), w, Math.min(18, h));
+    ctx.fillStyle = '#e8d3a8'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w / 2, y - tipLen); ctx.fill();
+    ctx.fillStyle = '#3a3a48'; ctx.beginPath(); ctx.moveTo(x + w * 0.38, y - tipLen * 0.75); ctx.lineTo(x + w * 0.62, y - tipLen * 0.75); ctx.lineTo(x + w / 2, y - tipLen); ctx.fill();
+  }
+}
+function drawPlane() {
+  ctx.save();
+  ctx.translate(plane.x, plane.y);
+  ctx.rotate(Math.max(-0.5, Math.min(0.9, plane.vy / 12)));
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#3d6fb6'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-18, -14); ctx.lineTo(-10, 0); ctx.lineTo(-18, 12); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-10, 0); ctx.stroke();
+  ctx.restore();
+}
+function text(s, y, size, color = '#2b2d3a') {
+  ctx.fillStyle = color; ctx.font = `800 ${size}px system-ui, sans-serif`; ctx.textAlign = 'center';
+  ctx.fillText(s, W / 2, y);
+}
+function draw() {
+  drawPaper();
+  // Pencil obstacles: tips point into the gap and end exactly at its edges.
+  for (const p of pencils) {
+    drawPencil(p.x, -10, p.w, p.top - 24, true);
+    drawPencil(p.x, p.top + p.gap + 34, p.w, H - p.top - p.gap, false);
+  }
+  drawPlane();
+  text(score, 70, 52);
+  if (state === 'ready') {
+    text('Paper Plane', H / 2 - 90, 40, '#3d6fb6');
+    text('Tap, click or press Space to fly', H / 2 + 80, 20);
+    text('Best: ' + best, H / 2 + 112, 18, '#6b6f85');
+  }
+  if (state === 'over') {
+    ctx.fillStyle = 'rgba(18,19,26,.55)'; ctx.fillRect(0, 0, W, H);
+    text('Crashed!', H / 2 - 40, 46, '#ffcc33');
+    text('Score: ' + score + '   Best: ' + best, H / 2 + 10, 22, '#fff');
+    if (timer > 30) text('Tap to try again', H / 2 + 56, 20, '#fff');
+  }
+}
+
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min((t - last) / 16.67, 3); last = t;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
