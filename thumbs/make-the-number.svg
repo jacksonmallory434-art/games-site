@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 384"><rect width="512" height="384" fill="#12131a"/>
+<rect x="56" y="30" width="400" height="130" rx="18" fill="#f7f5ee"/><text x="256" y="62" text-anchor="middle" font-size="18" fill="#6b6f85" font-family="Arial,Helvetica,sans-serif" font-weight="700">Make this number</text><text x="256" y="138" text-anchor="middle" font-size="72" fill="#2b2d3a" font-family="Arial,Helvetica,sans-serif" font-weight="700">24</text>
+<g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="40" text-anchor="middle"><rect x="56" y="190" width="88" height="88" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="4"/><text x="100" y="248" fill="#ecedf3">3</text>
+<rect x="160" y="190" width="88" height="88" rx="14" fill="#1c1e29" stroke="#ffcc33" stroke-width="4"/><text x="204" y="248" fill="#ecedf3">8</text>
+<rect x="264" y="190" width="88" height="88" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="4"/><text x="308" y="248" fill="#ecedf3">6</text>
+<rect x="368" y="190" width="88" height="88" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="4"/><text x="412" y="248" fill="#ecedf3">1</text></g>
+<g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="36" fill="#4a8cf0" text-anchor="middle"><rect x="56" y="300" width="88" height="56" rx="12" fill="#12131a" stroke="#2c2f3e" stroke-width="3"/><text x="100" y="340">+</text>
+<rect x="160" y="300" width="88" height="56" rx="12" fill="#12131a" stroke="#2c2f3e" stroke-width="3"/><text x="204" y="340">−</text>
+<rect x="264" y="300" width="88" height="56" rx="12" fill="#12131a" stroke="#2c2f3e" stroke-width="3"/><text x="308" y="340">×</text>
+<rect x="368" y="300" width="88" height="56" rx="12" fill="#12131a" stroke="#2c2f3e" stroke-width="3"/><text x="412" y="340">÷</text></g></svg>

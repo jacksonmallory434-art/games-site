@@ -65,5 +65,44 @@
     "source": "Gabriele Cirulli",
     "license": "MIT",
     "url": "https://github.com/gabrielecirulli/2048"
+  },
+  {
+    "slug": "times-table-tower",
+    "title": "Times Table Tower",
+    "category": "Arcade",
+    "thumb": "thumbs/times-table-tower.svg",
+    "embed": "games/times-table-tower/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "Build the tallest tower you can, one multiplication fact at a time. Every right answer drops a new block onto the stack, but answer wrong or too slowly and the top block tumbles off. The timer gets shorter and the facts get bigger as your tower grows.",
+    "howto": "Tap or click the right answer, or press 1 to 4. You have 3 lives, and each wrong or late answer costs one.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "fraction-pizza",
+    "title": "Fraction Pizza",
+    "category": "Puzzle",
+    "thumb": "thumbs/fraction-pizza.svg",
+    "embed": "games/fraction-pizza/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "Run a pizza shop where every customer orders a fraction. Put pepperoni on exactly the right share of the pizza and serve it before time runs out. Later orders come on pizzas cut into extra slices, so ½ might mean 4 out of 8.",
+    "howto": "Tap slices to add or remove pepperoni, then press Serve or Enter. Correct pizzas add 2 seconds; wrong ones cost 5.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "make-the-number",
+    "title": "Make the Number",
+    "category": "Puzzle",
+    "thumb": "thumbs/make-the-number.svg",
+    "embed": "games/make-the-number/index.html",
+    "width": 480,
+    "height": 640,
+    "mobile": true,
+    "description": "You get four numbers and a target. Combine the numbers with +, −, × and ÷ until you land exactly on the target. Every puzzle has at least one solution, and there's often more than one way to get there.",
+    "howto": "Tap a number, then an operation, then another number to combine them. Keep going until one number is left. Use Undo or Restart if you get stuck, or Skip to try a new puzzle.",
+    "source": "MathAdvice"
   }
 ]

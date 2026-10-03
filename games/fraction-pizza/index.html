@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Fraction Pizza</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 440px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); }
+  .hud b { color: var(--text); }
+  .bar { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; margin: 8px 0 12px; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--accent); }
+  .ticket {
+    display: inline-flex; align-items: center; gap: 14px; background: #f7f5ee; color: #2b2d3a; border-radius: 12px; padding: 8px 18px;
+    font-weight: 800; box-shadow: 0 4px 0 #d6d2c4;
+  }
+  .ticket .label { font-size: 1rem; text-align: left; line-height: 1.2; }
+  .frac { display: inline-flex; flex-direction: column; align-items: center; font-size: 1.9rem; line-height: 1; }
+  .frac span:first-child { border-bottom: 3px solid #2b2d3a; padding: 0 6px 2px; }
+  .frac span:last-child { padding-top: 2px; }
+  svg { width: min(100%, 52vh); height: auto; display: block; margin: 10px auto 4px; cursor: pointer; }
+  svg.bad { animation: shake .3s; }
+  svg.good { animation: pop .3s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  @keyframes pop { 50% { transform: scale(1.05); } }
+  .count { color: var(--muted); font-weight: 700; margin: 0 0 10px; }
+  .row { display: flex; gap: 10px; justify-content: center; }
+  .row button { font: inherit; font-weight: 800; font-size: 1.1rem; padding: 12px 22px; border-radius: 12px; border: 0; cursor: pointer; }
+  .serve { background: var(--accent); color: #111; }
+  .clear { background: var(--panel); color: var(--text); border: 2px solid var(--line) !important; }
+  .screen h1 { color: var(--accent); font-size: 2.4rem; margin: 0 0 8px; }
+  .screen p { color: var(--muted); margin: 6px 0; }
+  .screen .big { font-size: 3rem; font-weight: 800; color: var(--text); }
+  .go { margin-top: 16px; font: inherit; font-weight: 800; font-size: 1.2rem; padding: 14px 34px; border: 0; border-radius: 12px; background: var(--accent); color: #111; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="screen" id="start">
+    <h1>Fraction Pizza</h1>
+    <p>Customers order a fraction of pepperoni pizza.</p>
+    <p>Tap slices to add pepperoni, then hit Serve.</p>
+    <p>Careful: a pizza cut into 8 slices can still make ½!</p>
+    <p id="bestStart"></p>
+    <button class="go" id="play">Open the shop</button>
+  </section>
+
+  <section id="game" hidden>
+    <div class="hud"><span>Served <b id="score">0</b></span><span><b id="time">60</b>s</span></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="ticket"><span class="label">Order:<br>pepperoni on</span><span class="frac"><span id="num">1</span><span id="den">2</span></span><span class="label">of the<br>pizza</span></div>
+    <svg id="pizza" viewBox="-110 -110 220 220" aria-label="Pizza"></svg>
+    <p class="count" id="count"></p>
+    <div class="row"><button class="clear" id="clear" type="button">Clear</button><button class="serve" id="serve" type="button">Serve (Enter)</button></div>
+  </section>
+
+  <section class="screen" id="end" hidden>
+    <h1>Closing time!</h1>
+    <p>Pizzas served</p>
+    <div class="big" id="final">0</div>
+    <p id="bestEnd"></p>
+    <button class="go" id="again">Play again</button>
+  </section>
+</div>
+<script>
+// Fraction Pizza — a MathAdvice original.
+const KEY = 'ma-fractionpizza-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[rnd(0, a.length - 1)];
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+
+const TOTAL = 60;
+let score, timeLeft, running = false, last, order, slices, picked;
+
+function newOrder() {
+  // Early orders match the slices exactly; later ones need equivalent fractions.
+  const dens = score < 3 ? [2, 4] : score < 7 ? [2, 3, 4, 6] : [2, 3, 4, 6, 8];
+  const d = pick(dens);
+  let n; do { n = rnd(1, d - 1); } while (gcd(n, d) !== 1 && d > 2);
+  const multiples = [1, 2, 3, 4].filter(m => d * m <= 12 && (score >= 3 || m === 1));
+  slices = d * pick(multiples);
+  order = { n, d };
+  picked = new Array(slices).fill(false);
+  $('num').textContent = n; $('den').textContent = d;
+  drawPizza();
+}
+
+function slicePath(i, k, r) {
+  const a0 = -Math.PI / 2 + (i / k) * Math.PI * 2, a1 = -Math.PI / 2 + ((i + 1) / k) * Math.PI * 2;
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  return `M0 0 L${(Math.cos(a0) * r).toFixed(2)} ${(Math.sin(a0) * r).toFixed(2)} A${r} ${r} 0 ${large} 1 ${(Math.cos(a1) * r).toFixed(2)} ${(Math.sin(a1) * r).toFixed(2)}Z`;
+}
+function drawPizza() {
+  const k = slices, out = ['<circle r="104" fill="#d99a4e"/>'];
+  for (let i = 0; i < k; i++) {
+    out.push(`<path d="${slicePath(i, k, 92)}" data-i="${i}" fill="${picked[i] ? '#f6c453' : '#f8d77a'}" stroke="#d99a4e" stroke-width="3"/>`);
+    if (picked[i]) {
+      // A few pepperoni inside this slice.
+      const mid = -Math.PI / 2 + ((i + 0.5) / k) * Math.PI * 2, spread = Math.PI / k * 0.55;
+      [[0.62, 0], [0.38, -0.5], [0.38, 0.5], [0.82, -0.45], [0.82, 0.45]].forEach(([rr, aa], j) => {
+        if (k > 6 && j > 2) return;
+        const ang = mid + aa * spread * 1.6, R = 92 * rr;
+        out.push(`<circle cx="${(Math.cos(ang) * R).toFixed(1)}" cy="${(Math.sin(ang) * R).toFixed(1)}" r="${k > 8 ? 6 : 8}" fill="#c0392b" pointer-events="none"/>`);
+      });
+    }
+  }
+  $('pizza').innerHTML = out.join('');
+  const cnt = picked.filter(Boolean).length;
+  $('count').textContent = `${cnt} of ${k} slices have pepperoni`;
+}
+
+$('pizza').addEventListener('click', e => {
+  const s = e.target.closest('[data-i]'); if (!s || !running) return;
+  picked[+s.dataset.i] = !picked[+s.dataset.i]; drawPizza();
+});
+$('clear').onclick = () => { picked.fill(false); drawPizza(); };
+function serve() {
+  if (!running) return;
+  const cnt = picked.filter(Boolean).length, p = $('pizza');
+  p.classList.remove('good', 'bad'); void p.getBoundingClientRect();
+  if (cnt * order.d === order.n * slices) {
+    score++; $('score').textContent = score; p.classList.add('good');
+    timeLeft = Math.min(TOTAL, timeLeft + 2);
+    newOrder();
+  } else {
+    timeLeft -= 5; p.classList.add('bad');
+  }
+}
+$('serve').onclick = serve;
+addEventListener('keydown', e => {
+  if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); running ? serve() : start(); }
+});
+
+function start() {
+  score = 0; timeLeft = TOTAL; running = true; last = performance.now();
+  $('score').textContent = 0;
+  $('start').hidden = true; $('end').hidden = true; $('game').hidden = false;
+  newOrder(); requestAnimationFrame(tick);
+}
+function tick(t) {
+  if (!running) return;
+  timeLeft -= (t - last) / 1000; last = t;
+  if (timeLeft <= 0) return end();
+  $('time').textContent = Math.ceil(timeLeft);
+  $('bar').style.width = (timeLeft / TOTAL * 100) + '%';
+  requestAnimationFrame(tick);
+}
+function end() {
+  running = false;
+  const best = Math.max(getBest(), score); setBest(best);
+  $('final').textContent = score;
+  $('bestEnd').textContent = score >= best && score > 0 ? 'New best!' : 'Best: ' + best;
+  $('game').hidden = true; $('end').hidden = false;
+}
+$('play').onclick = start; $('again').onclick = start;
+$('bestStart').textContent = getBest() ? 'Best: ' + getBest() + ' pizzas' : '';
+</script>
+</body>
+</html>
