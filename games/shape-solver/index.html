@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Shape Solver</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 460px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); }
+  .hud b { color: var(--text); }
+  .bar { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; margin: 8px 0 10px; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--accent); }
+  .board { background: #f7f5ee; border-radius: 16px; padding: 6px;
+    background-image: linear-gradient(#d6e4f0 1px, transparent 1px), linear-gradient(90deg, #d6e4f0 1px, transparent 1px); background-size: 20px 20px; }
+  .board.good { box-shadow: 0 0 0 4px var(--good); } .board.bad { box-shadow: 0 0 0 4px var(--bad); animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
+  svg { width: 100%; height: auto; display: block; }
+  .q { font-weight: 800; font-size: clamp(1.05rem, 4.6vw, 1.3rem); margin: 12px 0; min-height: 1.4em; }
+  .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .answers button { font: inherit; font-size: 1.35rem; font-weight: 800; padding: 13px 0; border-radius: 12px; cursor: pointer; background: var(--panel); color: var(--text); border: 2px solid var(--line); position: relative; }
+  .answers button:hover { border-color: var(--accent); }
+  .answers button small { position: absolute; top: 4px; left: 9px; font-size: .7rem; color: var(--muted); }
+  .screen h1 { color: var(--accent); font-size: 2.3rem; margin: 0 0 8px; }
+  .screen p { color: var(--muted); margin: 6px 0; }
+  .screen .big { font-size: 3rem; font-weight: 800; color: var(--text); }
+  .go { margin-top: 16px; font: inherit; font-weight: 800; font-size: 1.2rem; padding: 14px 34px; border: 0; border-radius: 12px; background: var(--accent); color: #111; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="screen" id="start">
+    <h1>Shape Solver</h1>
+    <p>Missing angles, areas, perimeters, the Pythagorean theorem, and circles.</p>
+    <p>You have 90 seconds. Wrong answers cost 5 seconds.</p>
+    <p>Drawings are to scale. Click the answer or press 1–4.</p>
+    <p id="bestStart"></p>
+    <button class="go" id="play">Start</button>
+  </section>
+  <section id="game" hidden>
+    <div class="hud"><span>Score <b id="score">0</b></span><span><b id="time">90</b>s</span></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="board" id="board"><svg id="fig" viewBox="0 0 400 260"></svg></div>
+    <p class="q" id="q"></p>
+    <div class="answers" id="answers"></div>
+  </section>
+  <section class="screen" id="end" hidden>
+    <h1>Time's up!</h1>
+    <p>Problems solved</p>
+    <div class="big" id="final">0</div>
+    <p id="bestEnd"></p>
+    <button class="go" id="again">Play again</button>
+  </section>
+</div>
+<script>
+// Shape Solver — a MathAdvice original.
+const KEY = 'ma-shapesolver-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[rnd(0, a.length - 1)];
+const R = d => d * Math.PI / 180;
+const INK = '#2b2d3a', BLUE = '#2f6fd6', RED = '#e8505b';
+
+const TOTAL = 90;
+let score, timeLeft, running = false, last, answer, locked = false;
+
+function txt(x, y, s, color = INK, size = 20) {
+  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" fill="${color}" font-size="${size}" font-weight="800" font-family="system-ui,sans-serif" text-anchor="middle" dominant-baseline="middle">${s}</text>`;
+}
+function arc(cx, cy, r, a0, a1, color = BLUE) { // degrees, SVG y-down so angles measured counterclockwise visually
+  const p0 = [cx + r * Math.cos(R(a0)), cy - r * Math.sin(R(a0))], p1 = [cx + r * Math.cos(R(a1)), cy - r * Math.sin(R(a1))];
+  const large = Math.abs(a1 - a0) > 180 ? 1 : 0;
+  return `<path d="M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} A${r} ${r} 0 ${large} 0 ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}" fill="none" stroke="${color}" stroke-width="3"/>`;
+}
+function labelAt(cx, cy, r, ang, s, color) { return txt(cx + r * Math.cos(R(ang)), cy - r * Math.sin(R(ang)), s, color, 19); }
+function options(ans, spread, fmt = v => v) {
+  const set = new Set([ans]);
+  let guard = 0;
+  while (set.size < 4 && guard++ < 200) { const v = ans + rnd(-spread, spread); if (v > 0 && v !== ans) set.add(v); }
+  return [...set].sort(() => Math.random() - .5).map(v => ({ v, label: fmt(v) }));
+}
+
+const TYPES = {
+  triangle() {
+    // Two angles given, find the third. Drawn to scale.
+    const A = rnd(30, 80), B = rnd(30, 150 - A), C = 180 - A - B;
+    const base = 300, x0 = 50, y0 = 230;
+    // Apex from law of sines: side from A = base * sin(B)/sin(C)
+    const sa = base * Math.sin(R(B)) / Math.sin(R(C));
+    let ax = x0 + sa * Math.cos(R(A)), ay = y0 - sa * Math.sin(R(A));
+    const sc = Math.min(1, 200 / (y0 - ay)); // keep it on the board
+    const X = v => x0 + (v - x0) * sc, Y = v => y0 - (y0 - v) * sc;
+    const P = [[X(x0), Y(y0)], [X(x0 + base), Y(y0)], [X(ax), Y(ay)]];
+    let s = `<polygon points="${P.map(p => p.join(',')).join(' ')}" fill="rgba(47,111,214,.08)" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`;
+    s += arc(P[0][0], P[0][1], 32, 0, A) + labelAt(P[0][0], P[0][1], 54, A / 2, A + '°', BLUE);
+    s += arc(P[1][0], P[1][1], 32, 180 - B, 180) + labelAt(P[1][0], P[1][1], 54, 180 - B / 2, B + '°', BLUE);
+    // Put the x label just inside the top corner, along the line that splits angle C in half.
+    const u = (p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); return [dx / L, dy / L]; };
+    const u1 = u(P[2], P[0]), u2 = u(P[2], P[1]), bx = u1[0] + u2[0], by = u1[1] + u2[1], bl = Math.hypot(bx, by);
+    s += txt(P[2][0] + bx / bl * 36, P[2][1] + by / bl * 36, 'x', RED, 21);
+    answer = C;
+    return { svg: s, q: 'Find the missing angle x.', opts: options(C, 20, v => v + '°') };
+  },
+  line() {
+    const a = rnd(25, 155), cx = 200, cy = 170;
+    let s = `<line x1="30" y1="${cy}" x2="370" y2="${cy}" stroke="${INK}" stroke-width="3"/>`;
+    s += `<line x1="${cx}" y1="${cy}" x2="${cx + 150 * Math.cos(R(a))}" y2="${cy - 150 * Math.sin(R(a))}" stroke="${INK}" stroke-width="3"/>`;
+    s += arc(cx, cy, 34, 0, a) + labelAt(cx, cy, 60, a / 2, a + '°', BLUE);
+    s += arc(cx, cy, 46, a, 180, RED) + labelAt(cx, cy, 72, (a + 180) / 2, 'x', RED);
+    answer = 180 - a;
+    return { svg: s, q: 'Angles on a straight line. Find x.', opts: options(answer, 20, v => v + '°') };
+  },
+  point() {
+    const a = rnd(60, 140), b = rnd(60, 140), cx = 200, cy = 130, L = 110;
+    const dirs = [10, 10 + a, 10 + a + b];
+    let s = dirs.map(d => `<line x1="${cx}" y1="${cy}" x2="${cx + L * Math.cos(R(d))}" y2="${cy - L * Math.sin(R(d))}" stroke="${INK}" stroke-width="3"/>`).join('');
+    s += `<circle cx="${cx}" cy="${cy}" r="4" fill="${INK}"/>`;
+    s += arc(cx, cy, 28, dirs[0], dirs[1]) + labelAt(cx, cy, 52, dirs[0] + a / 2, a + '°', BLUE);
+    s += arc(cx, cy, 34, dirs[1], dirs[2]) + labelAt(cx, cy, 58, dirs[1] + b / 2, b + '°', BLUE);
+    s += arc(cx, cy, 40, dirs[2], 370, RED) + labelAt(cx, cy, 64, (dirs[2] + 370) / 2, 'x', RED);
+    answer = 360 - a - b;
+    return { svg: s, q: 'Angles around a point. Find x.', opts: options(answer, 20, v => v + '°') };
+  },
+  rectangle() {
+    const w = rnd(3, 14), h = rnd(2, 9), area = Math.random() < .5;
+    const sc = Math.min(260 / w, 170 / h), W = w * sc, H = h * sc, x = 200 - W / 2, y = 125 - H / 2;
+    let s = `<rect x="${x}" y="${y}" width="${W}" height="${H}" fill="rgba(47,111,214,.10)" stroke="${INK}" stroke-width="3"/>`;
+    s += txt(200, y + H + 22, w + ' cm', BLUE) + txt(x - 30, 125, h + ' cm', BLUE);
+    answer = area ? w * h : 2 * (w + h);
+    return { svg: s, q: area ? 'What is the area of the rectangle?' : 'What is the perimeter of the rectangle?',
+             opts: options(answer, area ? 12 : 8, v => v + (area ? ' cm²' : ' cm')) };
+  },
+  rightTriangle() {
+    const [p, q, r] = pick([[3, 4, 5], [6, 8, 10], [5, 12, 13], [8, 15, 17], [9, 12, 15], [7, 24, 25], [12, 16, 20]]);
+    const sc = Math.min(260 / q, 190 / p), x0 = 200 - q * sc / 2, y0 = 225;
+    const P = [[x0, y0], [x0 + q * sc, y0], [x0, y0 - p * sc]];
+    let s = `<polygon points="${P.map(v => v.join(',')).join(' ')}" fill="rgba(47,111,214,.08)" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`;
+    s += `<path d="M${x0 + 16} ${y0} V${y0 - 16} H${x0}" fill="none" stroke="${INK}" stroke-width="2"/>`;
+    const askHyp = Math.random() < .6;
+    const hyp = txt((P[1][0] + P[2][0]) / 2 + 18, (P[1][1] + P[2][1]) / 2 - 14, askHyp ? 'c' : r, askHyp ? RED : BLUE);
+    s += txt(x0 + q * sc / 2, y0 + 20, askHyp ? q : 'b', askHyp ? BLUE : RED) + txt(x0 - 22, y0 - p * sc / 2, p, BLUE) + hyp;
+    answer = askHyp ? r : q;
+    return { svg: s, q: askHyp ? 'Right triangle: find the long side c.' : 'Right triangle: find side b.', opts: options(answer, 5) };
+  },
+  circle() {
+    const r = rnd(2, 10), area = Math.random() < .5, cx = 200, cy = 125, Rr = 95;
+    let s = `<circle cx="${cx}" cy="${cy}" r="${Rr}" fill="rgba(47,111,214,.10)" stroke="${INK}" stroke-width="3"/><circle cx="${cx}" cy="${cy}" r="4" fill="${INK}"/>`;
+    s += `<line x1="${cx}" y1="${cy}" x2="${cx + Rr}" y2="${cy}" stroke="${BLUE}" stroke-width="3"/>` + txt(cx + Rr / 2, cy - 16, 'r = ' + r, BLUE);
+    answer = area ? r * r : 2 * r;
+    const set = new Set([answer]);
+    // Common mistakes make the best wrong answers: mixing up area and circumference.
+    [area ? 2 * r : r * r, area ? r * 2 * 2 : r, answer + rnd(1, 5), Math.max(1, answer - rnd(1, 5))].forEach(v => { if (set.size < 4 && v > 0) set.add(v); });
+    while (set.size < 4) set.add(answer + rnd(6, 20));
+    return { svg: s, q: area ? 'What is the area? (Answer in terms of π)' : 'What is the circumference? (Answer in terms of π)',
+             opts: [...set].sort(() => Math.random() - .5).map(v => ({ v, label: v + 'π' })) };
+  }
+};
+
+function next() {
+  const pool = score < 4 ? ['triangle', 'line', 'rectangle'] : Object.keys(TYPES);
+  const t = TYPES[pick(pool)]();
+  $('fig').innerHTML = t.svg; $('q').textContent = t.q;
+  $('answers').innerHTML = t.opts.map((o, i) => `<button data-v="${o.v}"><small>${i + 1}</small>${o.label}</button>`).join('');
+}
+function choose(v) {
+  if (!running || locked) return;
+  const b = $('board'); b.classList.remove('good', 'bad'); void b.offsetWidth;
+  if (v === answer) { score++; $('score').textContent = score; b.classList.add('good'); next(); }
+  else { timeLeft -= 5; b.classList.add('bad'); locked = true; setTimeout(() => locked = false, 300); }
+}
+$('answers').addEventListener('click', e => { const b = e.target.closest('button'); if (b) choose(+b.dataset.v); });
+addEventListener('keydown', e => {
+  if (running && /^[1-4]$/.test(e.key)) { const b = $('answers').children[+e.key - 1]; if (b) choose(+b.dataset.v); }
+  else if (!running && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); start(); }
+});
+function start() {
+  score = 0; timeLeft = TOTAL; running = true; last = performance.now(); $('score').textContent = 0;
+  $('start').hidden = true; $('end').hidden = true; $('game').hidden = false;
+  next(); requestAnimationFrame(tick);
+}
+function tick(t) {
+  if (!running) return;
+  timeLeft -= (t - last) / 1000; last = t;
+  if (timeLeft <= 0) return end();
+  $('time').textContent = Math.ceil(timeLeft); $('bar').style.width = (timeLeft / TOTAL * 100) + '%';
+  requestAnimationFrame(tick);
+}
+function end() {
+  running = false;
+  const best = Math.max(getBest(), score); setBest(best);
+  $('final').textContent = score; $('bestEnd').textContent = score >= best && score > 0 ? 'New best!' : 'Best: ' + best;
+  $('game').hidden = true; $('end').hidden = false;
+}
+$('play').onclick = start; $('again').onclick = start;
+$('bestStart').textContent = getBest() ? 'Best: ' + getBest() : '';
+</script>
+</body>
+</html>

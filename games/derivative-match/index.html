@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Derivative Match</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 480px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); }
+  .hud b { color: var(--text); }
+  .bar { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; margin: 8px 0 10px; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--accent); }
+  .main { background: #f7f5ee; border-radius: 14px; padding: 6px; }
+  .main.good { box-shadow: 0 0 0 4px var(--good); } .main.bad { box-shadow: 0 0 0 4px var(--bad); animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
+  .main h2 { margin: 2px 0; color: #2b2d3a; font-size: 1.15rem; font-family: "Times New Roman", serif; font-style: italic; }
+  svg { width: 100%; height: auto; display: block; }
+  .q { font-weight: 800; margin: 10px 0; font-size: 1.1rem; }
+  .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .answers button { font: inherit; padding: 4px; border-radius: 12px; cursor: pointer; background: #f7f5ee; border: 3px solid var(--line); position: relative; }
+  .answers button:hover { border-color: var(--accent); }
+  .answers button.formula { background: var(--panel); color: var(--text); font-family: "Times New Roman", serif; font-style: italic; font-size: 1.35rem; font-weight: 700; padding: 16px 4px; }
+  .answers button small { position: absolute; top: 3px; left: 8px; font-size: .7rem; color: #9a9db0; font-family: system-ui, sans-serif; font-style: normal; }
+  .hint { color: var(--muted); font-size: .85rem; margin: 8px 0 0; min-height: 1.2em; }
+  .screen h1 { color: var(--accent); font-size: 2.3rem; margin: 0 0 8px; }
+  .screen p { color: var(--muted); margin: 6px 0; }
+  .screen .big { font-size: 3rem; font-weight: 800; color: var(--text); }
+  .go { margin-top: 16px; font: inherit; font-weight: 800; font-size: 1.2rem; padding: 14px 34px; border: 0; border-radius: 12px; background: var(--accent); color: #111; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="screen" id="start">
+    <h1>Derivative Match</h1>
+    <p>See a function, pick its derivative: the graph of its slope, or the formula.</p>
+    <p>Tip: where f is flat, f′ crosses zero. Where f goes uphill, f′ is positive.</p>
+    <p>90 seconds. Wrong answers cost 5 seconds. Press 1–4 or click.</p>
+    <p id="bestStart"></p>
+    <button class="go" id="play">Start</button>
+  </section>
+  <section id="game" hidden>
+    <div class="hud"><span>Matched <b id="score">0</b></span><span><b id="time">90</b>s</span></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="main" id="main"><h2 id="fname"></h2><svg id="fplot" viewBox="0 0 400 200"></svg></div>
+    <p class="q" id="q"></p>
+    <div class="answers" id="answers"></div>
+    <p class="hint" id="hint"></p>
+  </section>
+  <section class="screen" id="end" hidden>
+    <h1>Time's up!</h1>
+    <p>Derivatives matched</p>
+    <div class="big" id="final">0</div>
+    <p id="bestEnd"></p>
+    <button class="go" id="again">Play again</button>
+  </section>
+</div>
+<script>
+// Derivative Match — a MathAdvice original.
+const KEY = 'ma-derivmatch-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = rnd(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// Each entry: f(x), its derivative f'(x), and how to write both.
+const FUNCS = [
+  { f: x => x * x, d: x => 2 * x, fs: 'x²', ds: '2x' },
+  { f: x => x ** 3, d: x => 3 * x * x, fs: 'x³', ds: '3x²' },
+  { f: x => x ** 3 - 3 * x, d: x => 3 * x * x - 3, fs: 'x³ − 3x', ds: '3x² − 3' },
+  { f: Math.sin, d: Math.cos, fs: 'sin x', ds: 'cos x' },
+  { f: Math.cos, d: x => -Math.sin(x), fs: 'cos x', ds: '−sin x' },
+  { f: Math.exp, d: Math.exp, fs: 'eˣ', ds: 'eˣ' },
+  { f: x => 2 - x * x, d: x => -2 * x, fs: '2 − x²', ds: '−2x' },
+  { f: x => 2 * x + 1, d: x => 2, fs: '2x + 1', ds: '2' },
+  { f: x => x * x - 2 * x, d: x => 2 * x - 2, fs: 'x² − 2x', ds: '2x − 2' },
+  { f: x => x ** 4 / 4 - x * x, d: x => x ** 3 - 2 * x, fs: 'x⁴/4 − x²', ds: 'x³ − 2x' },
+  { f: x => -(x ** 3), d: x => -3 * x * x, fs: '−x³', ds: '−3x²' },
+  { f: x => Math.sin(2 * x), d: x => 2 * Math.cos(2 * x), fs: 'sin 2x', ds: '2cos 2x' },
+  { f: x => 3, d: x => 0, fs: '3', ds: '0' },
+];
+const X0 = -3, X1 = 3, Y = 6;
+
+function path(fn, w, h, pad = 8) {
+  let d = '', pen = false;
+  for (let i = 0; i <= 160; i++) {
+    const x = X0 + (X1 - X0) * i / 160, y = fn(x);
+    if (!isFinite(y) || Math.abs(y) > Y * 1.05) { pen = false; continue; }
+    const px = pad + (x - X0) / (X1 - X0) * (w - 2 * pad), py = h / 2 - y / Y * (h / 2 - pad);
+    d += (pen ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1); pen = true;
+  }
+  return d;
+}
+function plot(fn, w, h, color, thick) {
+  const pad = 8, cx = pad + (0 - X0) / (X1 - X0) * (w - 2 * pad);
+  let s = '';
+  for (let gx = X0; gx <= X1; gx++) { const px = pad + (gx - X0) / (X1 - X0) * (w - 2 * pad); s += `<line x1="${px}" y1="0" x2="${px}" y2="${h}" stroke="#e1e9f2" stroke-width="1"/>`; }
+  for (let gy = -Y; gy <= Y; gy += 2) { const py = h / 2 - gy / Y * (h / 2 - pad); s += `<line x1="0" y1="${py}" x2="${w}" y2="${py}" stroke="#e1e9f2" stroke-width="1"/>`; }
+  s += `<line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#6b6f85" stroke-width="1.5"/><line x1="${cx}" y1="0" x2="${cx}" y2="${h}" stroke="#6b6f85" stroke-width="1.5"/>`;
+  return s + `<path d="${path(fn, w, h)}" fill="none" stroke="${color}" stroke-width="${thick}" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+// Two functions count as "the same" if they match at a bunch of points.
+const same = (g, h) => [-2.5, -1.3, -.4, .3, 1.1, 2.2].every(x => Math.abs(g(x) - h(x)) < 1e-6);
+
+const TOTAL = 90;
+let score, timeLeft, running = false, last, answer, locked = false, mode;
+
+function next() {
+  const target = FUNCS[rnd(0, FUNCS.length - 1)];
+  mode = score >= 3 && Math.random() < 0.45 ? 'formula' : 'graph';
+  $('fname').textContent = 'f(x) = ' + target.fs;
+  $('fplot').innerHTML = plot(target.f, 400, 200, '#2f6fd6', 4);
+  // Distractors: f itself, the negative of f′, and other functions' derivatives.
+  const pool = [{ fn: target.f, s: target.fs }, { fn: x => -target.d(x), s: null }]
+    .concat(shuffle(FUNCS.filter(o => o !== target)).map(o => ({ fn: o.d, s: o.ds })));
+  const opts = [{ fn: target.d, s: target.ds, right: true }];
+  for (const p of pool) {
+    if (opts.length === 4) break;
+    if (mode === 'formula' && !p.s) continue;
+    if (opts.some(o => same(o.fn, p.fn) || (mode === 'formula' && o.s === p.s))) continue;
+    opts.push(p);
+  }
+  shuffle(opts);
+  answer = opts.findIndex(o => o.right);
+  $('q').textContent = mode === 'graph' ? "Which graph is f′(x), the derivative?" : "Which formula is f′(x), the derivative?";
+  $('answers').innerHTML = opts.map((o, i) => mode === 'graph'
+    ? `<button data-i="${i}"><small>${i + 1}</small><svg viewBox="0 0 200 110">${plot(o.fn, 200, 110, '#e8505b', 3)}</svg></button>`
+    : `<button class="formula" data-i="${i}"><small>${i + 1}</small>f′(x) = ${o.s}</button>`).join('');
+  $('hint').textContent = '';
+}
+function choose(i) {
+  if (!running || locked) return;
+  const m = $('main'); m.classList.remove('good', 'bad'); void m.offsetWidth;
+  if (i === answer) { score++; $('score').textContent = score; m.classList.add('good'); next(); }
+  else {
+    timeLeft -= 5; m.classList.add('bad'); locked = true; setTimeout(() => locked = false, 300);
+    $('hint').textContent = mode === 'graph'
+      ? 'Check the slope of f: uphill means f′ is above the axis, downhill means below, flat means f′ = 0.'
+      : 'Power rule: the derivative of xⁿ is n·xⁿ⁻¹. Also: (sin x)′ = cos x, (cos x)′ = −sin x, (eˣ)′ = eˣ.';
+  }
+}
+$('answers').addEventListener('click', e => { const b = e.target.closest('button'); if (b) choose(+b.dataset.i); });
+addEventListener('keydown', e => {
+  if (running && /^[1-4]$/.test(e.key)) choose(+e.key - 1);
+  else if (!running && (e.code === 'Enter' || e.code === 'Space')) { e.preventDefault(); start(); }
+});
+function start() {
+  score = 0; timeLeft = TOTAL; running = true; last = performance.now(); $('score').textContent = 0;
+  $('start').hidden = true; $('end').hidden = true; $('game').hidden = false;
+  next(); requestAnimationFrame(tick);
+}
+function tick(t) {
+  if (!running) return;
+  timeLeft -= (t - last) / 1000; last = t;
+  if (timeLeft <= 0) return end();
+  $('time').textContent = Math.ceil(timeLeft); $('bar').style.width = (timeLeft / TOTAL * 100) + '%';
+  requestAnimationFrame(tick);
+}
+function end() {
+  running = false;
+  const best = Math.max(getBest(), score); setBest(best);
+  $('final').textContent = score; $('bestEnd').textContent = score >= best && score > 0 ? 'New best!' : 'Best: ' + best;
+  $('game').hidden = true; $('end').hidden = false;
+}
+$('play').onclick = start; $('again').onclick = start;
+$('bestStart').textContent = getBest() ? 'Best: ' + getBest() : '';
+</script>
+</body>
+</html>

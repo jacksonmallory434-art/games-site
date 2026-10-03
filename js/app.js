@@ -23,7 +23,10 @@ async function init() {
   const cats = document.getElementById('cats');
   let activeCat = 'All';
 
-  const categories = ['All', ...new Set(games.map(g => g.category))];
+  // Show topics from basic to advanced; any new topic goes at the end.
+  const ORDER = ['Arithmetic', 'Number Sense', 'Algebra', 'Geometry', 'Statistics', 'Calculus'];
+  const found = [...new Set(games.map(g => g.category))];
+  const categories = ['All', ...ORDER.filter(c => found.includes(c)), ...found.filter(c => !ORDER.includes(c))];
   cats.innerHTML = categories.map(c => `<button type="button" data-cat="${c}">${c}</button>`).join('');
 
   function render() {

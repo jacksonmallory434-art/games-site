@@ -2,7 +2,7 @@
   {
     "slug": "quick-maths",
     "title": "Quick Maths",
-    "category": "Puzzle",
+    "category": "Arithmetic",
     "thumb": "thumbs/quick-maths.svg",
     "embed": "games/quick-maths/index.html",
     "width": 480,
@@ -15,7 +15,7 @@
   {
     "slug": "answer-rush",
     "title": "Answer Rush",
-    "category": "Arcade",
+    "category": "Arithmetic",
     "thumb": "thumbs/answer-rush.svg",
     "embed": "games/answer-rush/index.html",
     "width": 640,
@@ -28,7 +28,7 @@
   {
     "slug": "number-snake",
     "title": "Number Snake",
-    "category": "Arcade",
+    "category": "Number Sense",
     "thumb": "thumbs/number-snake.svg",
     "embed": "games/number-snake/index.html",
     "width": 468,
@@ -41,7 +41,7 @@
   {
     "slug": "equation-match",
     "title": "Equation Match",
-    "category": "Puzzle",
+    "category": "Arithmetic",
     "thumb": "thumbs/equation-match.svg",
     "embed": "games/equation-match/index.html",
     "width": 480,
@@ -54,7 +54,7 @@
   {
     "slug": "2048",
     "title": "2048",
-    "category": "Puzzle",
+    "category": "Number Sense",
     "thumb": "thumbs/2048.svg",
     "embed": "games/2048/index.html",
     "width": 540,
@@ -69,7 +69,7 @@
   {
     "slug": "times-table-tower",
     "title": "Times Table Tower",
-    "category": "Arcade",
+    "category": "Arithmetic",
     "thumb": "thumbs/times-table-tower.svg",
     "embed": "games/times-table-tower/index.html",
     "width": 480,
@@ -82,7 +82,7 @@
   {
     "slug": "fraction-pizza",
     "title": "Fraction Pizza",
-    "category": "Puzzle",
+    "category": "Number Sense",
     "thumb": "thumbs/fraction-pizza.svg",
     "embed": "games/fraction-pizza/index.html",
     "width": 480,
@@ -95,7 +95,7 @@
   {
     "slug": "make-the-number",
     "title": "Make the Number",
-    "category": "Puzzle",
+    "category": "Arithmetic",
     "thumb": "thumbs/make-the-number.svg",
     "embed": "games/make-the-number/index.html",
     "width": 480,
@@ -103,6 +103,58 @@
     "mobile": true,
     "description": "You get four numbers and a target. Combine the numbers with +, −, × and ÷ until you land exactly on the target. Every puzzle has at least one solution, and there's often more than one way to get there.",
     "howto": "Tap a number, then an operation, then another number to combine them. Keep going until one number is left. Use Undo or Restart if you get stuck, or Skip to try a new puzzle.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "balance-the-equation",
+    "title": "Balance the Equation",
+    "category": "Algebra",
+    "thumb": "thumbs/balance-the-equation.jpg",
+    "embed": "games/balance-the-equation/index.html",
+    "width": 480,
+    "height": 720,
+    "mobile": true,
+    "description": "Solve linear equations the way a balance scale works: whatever you do to one side, you do to the other. Add, subtract, multiply, or divide both sides until x is alone. Earn up to three stars by solving in the fewest moves, and level up from one-step equations to x on both sides.",
+    "howto": "Pick an amount with − and + (or keys 1–9), switch between a number and an x-term, then press Add, Subtract, Multiply, or Divide. Undo and Restart are there if you get stuck.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "shape-solver",
+    "title": "Shape Solver",
+    "category": "Geometry",
+    "thumb": "thumbs/shape-solver.jpg",
+    "embed": "games/shape-solver/index.html",
+    "width": 460,
+    "height": 700,
+    "mobile": true,
+    "description": "Geometry problems with drawings to scale: missing angles in triangles, angles on a line and around a point, area and perimeter of rectangles, the Pythagorean theorem, and circle area and circumference in terms of π. Solve as many as you can in 90 seconds.",
+    "howto": "Click or tap the right answer, or press 1 to 4. Wrong answers cost 5 seconds.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "data-detective",
+    "title": "Data Detective",
+    "category": "Statistics",
+    "thumb": "thumbs/data-detective.jpg",
+    "embed": "games/data-detective/index.html",
+    "width": 460,
+    "height": 700,
+    "mobile": true,
+    "description": "Every case is a dot plot of real-world data like hours of sleep or goals per game. Read it and find the mean, median, mode, or range. Wrong answers show a hint so you learn the rule, and the clock keeps ticking.",
+    "howto": "Click or tap the right answer, or press 1 to 4. You have 90 seconds; wrong answers cost 5 seconds.",
+    "source": "MathAdvice"
+  },
+  {
+    "slug": "derivative-match",
+    "title": "Derivative Match",
+    "category": "Calculus",
+    "thumb": "thumbs/derivative-match.jpg",
+    "embed": "games/derivative-match/index.html",
+    "width": 480,
+    "height": 760,
+    "mobile": true,
+    "description": "An intro to derivatives you can see. Look at the graph of f(x) and pick the graph of its derivative, or pick the right derivative formula. Covers polynomials, the power rule, sine, cosine, and eˣ.",
+    "howto": "Click or tap the matching graph or formula, or press 1 to 4. Hint: where f is going uphill, f′ is positive; where f is flat, f′ is zero.",
     "source": "MathAdvice"
   }
 ]

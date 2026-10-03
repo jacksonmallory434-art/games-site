@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Balance the Equation</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; --bad: #ff6b6b; --blue: #4a8cf0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 480px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+  .hud b { color: var(--text); }
+  svg { width: 100%; height: auto; display: block; }
+  .eq { font-size: clamp(1.7rem, 8vw, 2.4rem); font-weight: 800; margin: 2px 0 4px; letter-spacing: .02em; }
+  .eq.win { color: var(--good); }
+  .moves { color: var(--muted); font-weight: 700; margin: 0 0 10px; font-size: .95rem; }
+  .ctrl { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .ctrl p { margin: 0 0 8px; color: var(--muted); font-size: .9rem; }
+  .row { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .amount { display: flex; align-items: center; gap: 6px; }
+  .amount button, .ops button, .bottom button {
+    font: inherit; font-weight: 800; border-radius: 10px; cursor: pointer; background: var(--bg); color: var(--text); border: 2px solid var(--line);
+  }
+  .amount button { width: 40px; height: 44px; font-size: 1.3rem; }
+  #amt { min-width: 74px; font-size: 1.7rem; font-weight: 800; }
+  .toggle { font: inherit; font-weight: 800; padding: 8px 12px; border-radius: 10px; cursor: pointer; background: var(--bg); color: var(--muted); border: 2px solid var(--line); }
+  .toggle.on { color: var(--accent); border-color: var(--accent); }
+  .ops { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  .ops button { font-size: 1.05rem; padding: 10px 0; color: var(--blue); }
+  .ops button:disabled { opacity: .35; cursor: default; }
+  .msg { min-height: 1.3em; margin: 10px 0 0; font-weight: 700; color: var(--muted); }
+  .msg.bad { color: var(--bad); } .msg.good { color: var(--good); }
+  .bottom { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+  .bottom button { padding: 9px 16px; font-size: .95rem; }
+  .bottom .next { background: var(--accent); color: #111; border-color: var(--accent); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hud"><span>Level <b id="level">1</b></span><span>Stars <b id="stars">0</b></span><span>Solved <b id="solved">0</b></span></div>
+  <svg viewBox="0 0 480 150" aria-hidden="true">
+    <polygon points="240,52 222,140 258,140" fill="#3a3d4f"/>
+    <rect x="200" y="138" width="80" height="8" rx="4" fill="#3a3d4f"/>
+    <g id="beam">
+      <rect x="40" y="46" width="400" height="10" rx="5" fill="#9a9db0"/>
+      <line x1="80" y1="56" x2="80" y2="96" stroke="#9a9db0" stroke-width="3"/>
+      <line x1="400" y1="56" x2="400" y2="96" stroke="#9a9db0" stroke-width="3"/>
+      <path d="M20 96 h120 q-6 22 -60 22 q-54 0 -60 -22z" fill="#4a8cf0"/>
+      <path d="M340 96 h120 q-6 22 -60 22 q-54 0 -60 -22z" fill="#4a8cf0"/>
+      <text id="lhs" x="80" y="88" text-anchor="middle" font-size="22" font-weight="800" fill="#ecedf3" font-family="system-ui,sans-serif"></text>
+      <text id="rhs" x="400" y="88" text-anchor="middle" font-size="22" font-weight="800" fill="#ecedf3" font-family="system-ui,sans-serif"></text>
+    </g>
+  </svg>
+  <div class="eq" id="eq"></div>
+  <p class="moves" id="moves"></p>
+  <div class="ctrl">
+    <p>Do the same thing to both sides. Get <b>x</b> by itself.</p>
+    <div class="row">
+      <div class="amount"><button id="minus" type="button" aria-label="Decrease">−</button><span id="amt">1</span><button id="plus" type="button" aria-label="Increase">+</button></div>
+      <button class="toggle" id="xToggle" type="button">number</button>
+    </div>
+    <div class="ops">
+      <button data-op="add" type="button">Add</button>
+      <button data-op="sub" type="button">Subtract</button>
+      <button data-op="mul" type="button">Multiply</button>
+      <button data-op="div" type="button">Divide</button>
+    </div>
+  </div>
+  <p class="msg" id="msg"></p>
+  <div class="bottom">
+    <button id="undo" type="button">Undo</button>
+    <button id="restart" type="button">Restart</button>
+    <button id="next" class="next" type="button" hidden>Next equation</button>
+  </div>
+</div>
+<script>
+// Balance the Equation — a MathAdvice original.
+const KEY = 'ma-balance-stars';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const nz = (a, b) => { let v; do { v = rnd(a, b); } while (v === 0); return v; };
+
+// Equation: a·x + b = c·x + d
+let eq, start, hist, moves, par, amt = 1, useX = false, solved = 0, stars = 0, done = false;
+
+function level() { return solved < 3 ? 1 : solved < 7 ? 2 : solved < 12 ? 3 : 4; }
+function makeEquation() {
+  const L = level(), x = nz(-9, 9);
+  let a, b, c, d;
+  if (L === 1) { a = 1; c = 0; b = nz(-12, 12); par = 1; }                  // x + b = d
+  else if (L === 2) { a = rnd(2, 9) * (Math.random() < .2 ? -1 : 1); c = 0; b = 0; par = 1; } // ax = d
+  else if (L === 3) { a = rnd(2, 9); c = 0; b = nz(-15, 15); par = 2; }      // ax + b = d
+  else { do { a = nz(-6, 9); c = nz(-6, 9); } while (a === c || Math.abs(a - c) > 9); b = nz(-15, 15); par = 3; } // ax + b = cx + d
+  d = a * x + b - c * x;
+  const e = (Math.random() < 0.3 && L >= 3) ? { a: c, b: d, c: a, d: b, x } : { a, b, c, d, x }; // sometimes flip sides
+  // Fewest moves: gather x on the left or on the right, whichever is shorter.
+  const left = (e.c ? 1 : 0) + (e.b ? 1 : 0) + (e.a - e.c !== 1 ? 1 : 0);
+  const right = (e.a ? 1 : 0) + (e.d ? 1 : 0) + (e.c - e.a !== 1 ? 1 : 0);
+  par = Math.min(left, right);
+  return e;
+}
+function term(k, v) { // k·x + v as text
+  const parts = [];
+  if (k) parts.push(k === 1 ? 'x' : k === -1 ? '−x' : (k < 0 ? '−' : '') + Math.abs(k) + 'x');
+  if (v || !k) {
+    if (parts.length) parts.push(v < 0 ? ' − ' + Math.abs(v) : ' + ' + v);
+    else parts.push(v < 0 ? '−' + Math.abs(v) : String(v));
+  }
+  return parts.join('');
+}
+function render() {
+  $('lhs').textContent = term(eq.a, eq.b); $('rhs').textContent = term(eq.c, eq.d);
+  $('eq').textContent = term(eq.a, eq.b) + ' = ' + term(eq.c, eq.d);
+  $('moves').textContent = `Moves: ${moves}   ·   Best possible: ${par}`;
+  $('amt').textContent = useX ? (amt === 1 ? 'x' : amt === -1 ? '−x' : String(amt).replace('-', '−') + 'x') : String(amt).replace('-', '−');
+  $('xToggle').textContent = useX ? 'x-term' : 'number'; $('xToggle').classList.toggle('on', useX);
+  document.querySelectorAll('.ops button').forEach(b => b.disabled = done || (useX && (b.dataset.op === 'mul' || b.dataset.op === 'div')));
+  $('level').textContent = level(); $('solved').textContent = solved; $('stars').textContent = stars;
+}
+function say(t, cls = '') { const m = $('msg'); m.textContent = t; m.className = 'msg ' + cls; }
+function newEquation() {
+  eq = makeEquation(); start = { ...eq }; hist = []; moves = 0; done = false;
+  $('eq').classList.remove('win'); $('next').hidden = true; say('');
+  render();
+}
+function isSolved(e) {
+  return (e.a === 1 && e.b === 0 && e.c === 0) || (e.c === 1 && e.d === 0 && e.a === 0);
+}
+function apply(op) {
+  if (done) return;
+  const e = { ...eq }, k = amt;
+  if (op === 'add') { if (useX) { e.a += k; e.c += k; } else { e.b += k; e.d += k; } }
+  if (op === 'sub') { if (useX) { e.a -= k; e.c -= k; } else { e.b -= k; e.d -= k; } }
+  if (op === 'mul') { e.a *= k; e.b *= k; e.c *= k; e.d *= k; }
+  if (op === 'div') {
+    if ([e.a, e.b, e.c, e.d].some(v => v % k !== 0)) { say(`Dividing by ${k} would make fractions here. Try something else.`, 'bad'); return; }
+    e.a /= k; e.b /= k; e.c /= k; e.d /= k;
+  }
+  if (e.a === 0 && e.c === 0) { say('That would remove x from both sides. Try another move.', 'bad'); return; }
+  hist.push(eq); eq = e; moves++;
+  const word = { add: 'Added', sub: 'Subtracted', mul: 'Multiplied by', div: 'Divided by' }[op];
+  say(`${word} ${useX ? (k === 1 ? 'x' : k + 'x') : k} on both sides.`.replace(/-/g, '−'));
+  if (isSolved(eq)) win();
+  render();
+}
+function win() {
+  done = true; solved++;
+  const s = moves <= par ? 3 : moves <= par + 1 ? 2 : 1;
+  stars += s; if (stars > getBest()) setBest(stars);
+  $('eq').classList.add('win');
+  say(`Solved! x = ${eq.a === 1 ? eq.d : eq.b}   ${'★'.repeat(s)}${'☆'.repeat(3 - s)}`, 'good');
+  $('next').hidden = false;
+}
+
+$('plus').onclick = () => { amt = Math.min(20, amt + 1 || 1); render(); };
+$('minus').onclick = () => { amt = Math.max(-20, amt - 1 || -1); render(); };
+$('xToggle').onclick = () => { useX = !useX; render(); };
+document.querySelectorAll('.ops button').forEach(b => b.onclick = () => apply(b.dataset.op));
+$('undo').onclick = () => { if (!hist.length || done) return; eq = hist.pop(); moves++; say('Undone (counts as a move).'); render(); };
+$('restart').onclick = () => { eq = { ...start }; hist = []; moves = 0; done = false; $('eq').classList.remove('win'); $('next').hidden = true; say(''); render(); };
+$('next').onclick = newEquation;
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') $('plus').click();
+  else if (e.key === 'ArrowDown') $('minus').click();
+  else if (e.key === 'x') $('xToggle').click();
+  else if (e.key === '+') apply('add'); else if (e.key === '-') apply('sub');
+  else if (e.key === '*') apply('mul'); else if (e.key === '/') apply('div');
+  else if (e.key === 'Enter' && done) newEquation();
+  else if (/^[1-9]$/.test(e.key)) { amt = +e.key; render(); }
+});
+newEquation();
+</script>
+</body>
+</html>
