@@ -26,6 +26,9 @@ async function init() {
   // Keep the game's shape on any screen size.
   const frame = document.getElementById('frame');
   frame.style.paddingTop = `${(g.height / g.width) * 100}%`;
+  // Keep tall (phone-shaped) games from being taller than the screen.
+  frame.style.maxWidth = `calc(80vh * ${g.width / g.height})`;
+  frame.style.marginInline = 'auto';
   const iframe = document.createElement('iframe');
   iframe.src = g.embed;
   iframe.title = g.title;

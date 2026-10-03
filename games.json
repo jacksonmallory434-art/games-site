@@ -1,41 +1,15 @@
 [
   {
-    "slug": "example-puzzle",
-    "title": "Example Puzzle",
+    "slug": "stacky-hero-master",
+    "title": "Stacky Hero Master",
     "category": "Puzzle",
-    "thumb": "",
-    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
+    "thumb": "https://img.gamemonetize.com/9q88up7l4oitsteo10kd09cou3g5bdy9/512x384.jpg",
+    "embed": "https://html5.gamemonetize.co/9q88up7l4oitsteo10kd09cou3g5bdy9/",
     "width": 800,
     "height": 600,
     "mobile": true,
-    "description": "Write 2-3 sentences in your own words about what the game is.",
-    "howto": "Explain the controls, e.g. Use the arrow keys to move. Press Space to jump.",
-    "source": "GameMonetize"
-  },
-  {
-    "slug": "example-racing",
-    "title": "Example Racing",
-    "category": "Racing",
-    "thumb": "",
-    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
-    "width": 960,
-    "height": 540,
-    "mobile": false,
-    "description": "Write 2-3 sentences in your own words about what the game is.",
-    "howto": "Explain the controls.",
-    "source": "GameMonetize"
-  },
-  {
-    "slug": "example-arcade",
-    "title": "Example Arcade",
-    "category": "Arcade",
-    "thumb": "",
-    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
-    "width": 800,
-    "height": 600,
-    "mobile": true,
-    "description": "Write 2-3 sentences in your own words about what the game is.",
-    "howto": "Explain the controls.",
+    "description": "Guide your runner through twisting maze levels, scooping up blocks as you go. Your stack of blocks is also your bridge, so plan a route that collects enough to cross every gap and reach the finish. Each level adds a new layout to figure out.",
+    "howto": "Click or tap to use the buttons and steer your hero through the maze. Pick up as many blocks as you can before you need to build across a gap.",
     "source": "GameMonetize"
   }
 ]
