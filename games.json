@@ -11,5 +11,18 @@
     "description": "Guide your runner through twisting maze levels, scooping up blocks as you go. Your stack of blocks is also your bridge, so plan a route that collects enough to cross every gap and reach the finish. Each level adds a new layout to figure out.",
     "howto": "Click or tap to use the buttons and steer your hero through the maze. Pick up as many blocks as you can before you need to build across a gap.",
     "source": "GameMonetize"
+  },
+  {
+    "slug": "halloween-fighters",
+    "title": "Halloween Fighters",
+    "category": "Arcade",
+    "thumb": "https://img.gamemonetize.com/22gkthmc1ag0868ztgrnr72gujpzo1o4/512x384.jpg",
+    "embed": "https://html5.gamemonetize.co/22gkthmc1ag0868ztgrnr72gujpzo1o4/",
+    "width": 1280,
+    "height": 720,
+    "mobile": false,
+    "description": "A spooky arcade brawler with a roster of 11 monsters to pick from. Fight your way across 12 haunted stages, chain punches and kicks into combos, and take down three huge bosses. Turn the difficulty up once you've learned your monster's moves.",
+    "howto": "Move with the arrow keys or WASD. Punch with Z or J and kick with X or K. Hold a direction while you attack to pull off different moves.",
+    "source": "GameMonetize"
   }
 ]
