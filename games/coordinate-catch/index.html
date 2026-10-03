@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Coordinate Catch</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Coordinate Catch — a MathAdvice original.
+MathQuiz({ key: 'coordinatecatch', title: 'Coordinate Catch',
+  intro: ['A point appears on the coordinate plane.', 'Catch it by picking its coordinates (x, y).'],
+  gen(level) {
+    const { rnd, choices } = MQ;
+    const lim = level < 1 ? 5 : 6;
+    let x, y; do { x = rnd(-lim, lim); y = rnd(-lim, lim); } while (x === 0 && y === 0 || x === y);
+    const S = 20, O = 130, fmt = (a, b) => `(${a}, ${b})`.replace(/-/g, '−');
+    let g = '';
+    for (let i = -6; i <= 6; i++) { g += `<line x1="${O + i * S}" y1="10" x2="${O + i * S}" y2="250" stroke="#d6e4f0"/><line x1="10" y1="${O - i * S}" x2="250" y2="${O - i * S}" stroke="#d6e4f0"/>`; }
+    g += `<line x1="10" y1="${O}" x2="250" y2="${O}" stroke="#6b6f85" stroke-width="1.5"/><line x1="${O}" y1="10" x2="${O}" y2="250" stroke="#6b6f85" stroke-width="1.5"/>`;
+    for (let i = -6; i <= 6; i += 2) if (i) g += `<text x="${O + i * S}" y="${O + 16}" font-size="11" fill="#6b6f85" text-anchor="middle">${i}</text><text x="${O - 12}" y="${O - i * S + 4}" font-size="11" fill="#6b6f85" text-anchor="middle">${i}</text>`.replace(/>-/g, '>−');
+    g += `<circle cx="${O + x * S}" cy="${O - y * S}" r="8" fill="#e8505b" stroke="#fff" stroke-width="2"/>`;
+    const ans = fmt(x, y);
+    return { board: `<svg viewBox="0 0 260 260" style="max-width:300px">${g}</svg>`, q: 'What are the coordinates of the red point?', answer: ans,
+      options: choices(ans, [fmt(y, x), fmt(-x, y), fmt(x, -y)], () => fmt(rnd(-lim, lim), rnd(-lim, lim))),
+      hint: 'Go across first (x), then up or down (y). Right and up are positive; left and down are negative.' };
+  } });
+</script>
+</body>
+</html>

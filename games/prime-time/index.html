@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Prime Time</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Prime Time — a MathAdvice original.
+MathQuiz({ key: 'primetime', title: 'Prime Time', choices: 2, time: 60, penalty: 3,
+  intro: ['Is the number prime or composite? Decide fast.', 'A prime has exactly two factors: 1 and itself.'],
+  gen(level) {
+    const { rnd } = MQ;
+    const max = [30, 60, 100, 150, 200][Math.min(level, 4)];
+    const isPrime = n => { if (n < 2) return false; for (let d = 2; d * d <= n; d++) if (n % d === 0) return false; return true; };
+    // Mix in tricky composites (odd numbers like 51, 57, 91) so it isn't just "odd = prime".
+    let n; do { n = rnd(2, max); } while (!isPrime(n) && n % 2 === 0 && Math.random() < .6);
+    const prime = isPrime(n);
+    let f = 0; if (!prime) for (let d = 2; d * d <= n; d++) if (n % d === 0) { f = d; break; }
+    return { board: `<div class="big">${n}</div>`, q: 'Prime or composite?', answer: prime ? 'Prime' : 'Composite',
+      options: ['Prime', 'Composite'],
+      hint: prime ? `${n} is prime: nothing from 2 up to √${n} divides it evenly.` : `${n} is composite: ${n} = ${f} × ${n / f}.` };
+  } });
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>SOH CAH TOA</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// SOH CAH TOA — a MathAdvice original.
+MathQuiz({ key: 'sohcahtoa', title: 'SOH CAH TOA',
+  intro: ['A right triangle with an angle θ marked.', 'Find sin θ, cos θ, or tan θ as a fraction.', 'SOH: sin = opposite ÷ hypotenuse. CAH: cos = adjacent ÷ hypotenuse. TOA: tan = opposite ÷ adjacent.'],
+  gen(level) {
+    const { pick, choices, frac, gcd } = MQ;
+    const [a, b, c] = pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [7, 24, 25], [6, 8, 10], [9, 12, 15], [20, 21, 29]]);
+    // Triangle: right angle bottom-left, θ at bottom-right. Opposite = vertical leg (a), adjacent = base (b).
+    const flip = Math.random() < .5, opp = flip ? b : a, adj = flip ? a : b;
+    const fn = pick(level < 1 ? ['sin', 'cos'] : ['sin', 'cos', 'tan']);
+    const red = (n, d) => { const g = gcd(n, d); return `${n / g}/${d / g}`; };
+    const ratio = { sin: red(opp, c), cos: red(adj, c), tan: red(opp, adj) };
+    const ans = ratio[fn];
+    const wrong = [ratio.sin, ratio.cos, ratio.tan, red(adj, opp), red(c, opp)].filter(v => v !== ans);
+    const W = 200 * adj / Math.max(adj, opp), Hh = 150 * opp / Math.max(adj, opp);
+    const x0 = 40, y0 = 190, P = [[x0, y0], [x0 + W, y0], [x0, y0 - Hh]];
+    let s = `<polygon points="${P.map(p => p.join(',')).join(' ')}" fill="rgba(47,111,214,.08)" stroke="#2b2d3a" stroke-width="3" stroke-linejoin="round"/>`;
+    s += `<path d="M${x0 + 14} ${y0} V${y0 - 14} H${x0}" fill="none" stroke="#2b2d3a" stroke-width="2"/>`;
+    s += `<path d="M${x0 + W - 34} ${y0} A34 34 0 0 1 ${x0 + W - 34 * Math.cos(Math.atan2(Hh, W))} ${y0 - 34 * Math.sin(Math.atan2(Hh, W))}" fill="none" stroke="#e8505b" stroke-width="3"/>`;
+    s += `<text x="${x0 + W - 52}" y="${y0 - 10}" font-size="18" font-weight="800" fill="#e8505b">θ</text>`;
+    s += `<text x="${x0 + W / 2}" y="${y0 + 22}" font-size="17" font-weight="800" fill="#2f6fd6" text-anchor="middle">${adj}</text>`;
+    s += `<text x="${x0 - 14}" y="${y0 - Hh / 2}" font-size="17" font-weight="800" fill="#2f6fd6" text-anchor="end">${opp}</text>`;
+    s += `<text x="${x0 + W / 2 + 14}" y="${y0 - Hh / 2 - 8}" font-size="17" font-weight="800" fill="#2f6fd6">${c}</text>`;
+    return { board: `<svg viewBox="0 0 280 220" style="max-width:320px">${s}</svg>`, q: `What is <em>${fn} θ</em>?`, answer: ans,
+      options: choices(ans, wrong).map(v => ({ value: v, label: frac(...v.split('/')) })),
+      hint: `From θ: the opposite side is ${opp}, the adjacent side is ${adj}, the hypotenuse is ${c}. SOH CAH TOA.` };
+  } });
+</script>
+</body>
+</html>

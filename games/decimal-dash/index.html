@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Decimal Dash</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Decimal Dash — a MathAdvice original.
+MathQuiz({ key: 'decimaldash', title: 'Decimal Dash',
+  intro: ['Add, subtract, and multiply decimals.', 'Line up those decimal points!'],
+  gen(level) {
+    const { rnd, pick, choices } = MQ;
+    const fmt = v => (Math.round(v * 1000) / 1000).toString();
+    const d1 = () => rnd(1, 99) / 10, d2 = () => rnd(1, 999) / 100;
+    const op = pick(level < 1 ? ['+', '−'] : ['+', '−', '×', '× 10', '÷ 10']);
+    let a, b, ans, wrong, txt, hint;
+    if (op === '+') { a = d1(); b = level < 1 ? d1() : d2(); ans = a + b; txt = `${fmt(a)} + ${fmt(b)}`; wrong = [ans * 10, ans / 10, a + b * 10]; hint = 'Line up the decimal points, then add as usual.'; }
+    if (op === '−') { a = d2() + 5; b = d1(); ans = a - b; txt = `${fmt(a)} − ${fmt(b)}`; wrong = [ans + 1, ans * 10, Math.abs(a * 10 - b) / 10]; hint = 'Line up the decimal points (add zeros if it helps), then subtract.'; }
+    if (op === '×') { a = rnd(2, 9); b = d1(); ans = a * b; txt = `${a} × ${fmt(b)}`; wrong = [ans * 10, ans / 10, a + b]; hint = 'Multiply as if there were no decimal, then put back as many decimal places as the problem had.'; }
+    if (op === '× 10') { a = d2(); const m = pick([10, 100]); ans = a * m; txt = `${fmt(a)} × ${m}`; wrong = [a * m / 10, a * m * 10, a + m]; hint = 'Multiplying by 10 moves the decimal point one place right; by 100, two places.'; }
+    if (op === '÷ 10') { a = d1() * 10; ans = a / 10; txt = `${fmt(a)} ÷ 10`; wrong = [a * 10, ans / 10, a - 10 > 0 ? a - 10 : a / 100]; hint = 'Dividing by 10 moves the decimal point one place left.'; }
+    const A = fmt(ans);
+    return { board: `<div class="big">${txt}</div>`, q: 'What is the answer?', answer: A,
+      options: choices(A, wrong.map(fmt), () => fmt(ans + rnd(-20, 20) / 10)).map(v => ({ value: v, label: v.replace('-', '−') })), hint };
+  } });
+</script>
+</body>
+</html>

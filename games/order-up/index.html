@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Order Up</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Order Up — a MathAdvice original.
+MathQuiz({ key: 'orderup', title: 'Order Up',
+  intro: ['Evaluate each expression using the order of operations:', 'Parentheses, Exponents, Multiplication & Division (left to right), Addition & Subtraction (left to right).'],
+  gen(level) {
+    const { rnd, pick, choices } = MQ;
+    const r = () => rnd(2, 9);
+    // Each template returns [text, correct value, common left-to-right mistake].
+    const T = [
+      () => { const a = r(), b = r(), c = r(); return [`${a} + ${b} × ${c}`, a + b * c, (a + b) * c]; },
+      () => { const a = r(), b = r(), c = r(); return [`(${a} + ${b}) × ${c}`, (a + b) * c, a + b * c]; },
+      () => { const b = r(), c = r(), a = b * c + r(); return [`${a} − ${b} × ${c}`, a - b * c, (a - b) * c]; },
+      () => { const c = r(), q = r(), b = c * q, a = r(); return [`${a} + ${b} ÷ ${c}`, a + q, Number.isInteger((a + b) / c) ? (a + b) / c : a + b - c]; },
+      () => { const a = r(), b = rnd(2, 5); return [`${a} + ${b}²`, a + b * b, (a + b) ** 2]; },
+      () => { const a = r(), b = r(), c = rnd(2, 4); return [`${a} × ${b} − ${c}²`, a * b - c * c, (a * b - c) ** 2]; },
+      () => { const a = r(), b = r(), c = r(), d = r(); return [`${a} × ${b} + ${c} × ${d}`, a * b + c * d, (a * b + c) * d]; },
+      () => { const a = r(), b = r(), c = rnd(1, Math.min(a, b) - 1 || 1); return [`${a * 2} − (${b} − ${c})`, a * 2 - (b - c), a * 2 - b - c]; },
+      () => { const b = rnd(2, 4), c = r(), a = r(); return [`(${a} + ${c}) × ${b}²`, (a + c) * b * b, ((a + c) * b) ** 2]; },
+    ];
+    const [txt, ans, mistake] = (level < 1 ? pick(T.slice(0, 4)) : pick(T))();
+    return { board: `<div class="big">${txt}</div>`, q: 'What does it equal?', answer: ans,
+      options: choices(ans, [mistake, ans + 1, ans - 2].filter(v => v !== ans), () => ans + rnd(-8, 8)).map(v => ({ value: v, label: String(v).replace('-', '−') })),
+      hint: 'Don\'t just go left to right! Parentheses first, then exponents, then × and ÷, then + and −.' };
+  } });
+</script>
+</body>
+</html>

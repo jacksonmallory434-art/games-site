@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Number Line Ninja</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 560px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); margin-bottom: 10px; }
+  .hud b { color: var(--text); }
+  .target { font-size: clamp(2.2rem, 10vw, 3.2rem); font-weight: 800; color: var(--accent); min-height: 1.3em; }
+  .frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; line-height: 1; }
+  .frac span:first-child { border-bottom: 3px solid currentColor; padding: 0 6px 3px; } .frac span:last-child { padding-top: 3px; }
+  .board { background: #f7f5ee; border-radius: 16px; margin: 12px 0; cursor: crosshair; }
+  svg { width: 100%; height: auto; display: block; }
+  .msg { min-height: 1.4em; font-weight: 700; color: var(--muted); margin: 6px 0 12px; }
+  .msg b { color: var(--good); }
+  button.go { font: inherit; font-weight: 800; font-size: 1.15rem; padding: 12px 30px; border: 0; border-radius: 12px; background: var(--accent); color: #111; cursor: pointer; }
+  .screen h1 { color: var(--accent); font-size: 2.3rem; margin: 0 0 8px; }
+  .screen p { color: var(--muted); margin: 6px 0; }
+  .screen .big { font-size: 3rem; font-weight: 800; color: var(--text); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="screen" id="start">
+    <h1>Number Line Ninja</h1>
+    <p>A number appears. Tap exactly where it belongs on the number line.</p>
+    <p>10 rounds. The closer you strike, the more points (up to 100 each).</p>
+    <p>Fractions, decimals, and negative numbers show up as you go.</p>
+    <p id="bestStart"></p>
+    <button class="go" id="play">Start</button>
+  </section>
+  <section id="game" hidden>
+    <div class="hud"><span>Round <b id="round">1</b>/10</span><span>Score <b id="score">0</b></span></div>
+    <div class="target" id="target"></div>
+    <div class="board" id="board"><svg id="line" viewBox="0 0 520 150"></svg></div>
+    <p class="msg" id="msg">Tap the line.</p>
+    <button class="go" id="next" hidden>Next</button>
+  </section>
+  <section class="screen" id="end" hidden>
+    <h1>Nice slicing!</h1>
+    <p>Total score (out of 1000)</p>
+    <div class="big" id="final">0</div>
+    <p id="bestEnd"></p>
+    <button class="go" id="again">Play again</button>
+  </section>
+</div>
+<script>
+// Number Line Ninja — a MathAdvice original.
+const KEY = 'ma-numberline-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[rnd(0, a.length - 1)];
+const X0 = 30, X1 = 490, LY = 80;
+
+let round, score, cur, answered;
+function frac(n, d) { return `<span class="frac"><span>${n}</span><span>${d}</span></span>`; }
+function makeRound(r) {
+  // Rounds get harder: whole numbers, then fractions, decimals, negatives, and wider ranges.
+  if (r < 2) { const v = rnd(1, 9); return { lo: 0, hi: 10, v, show: String(v), ticks: 1, labels: [0, 10] }; }
+  if (r < 4) { const d = pick([2, 3, 4, 5, 8]), n = rnd(1, d - 1); return { lo: 0, hi: 1, v: n / d, show: frac(n, d), ticks: 0, labels: [0, 1] }; }
+  if (r < 6) { const v = rnd(1, 99) / 100; return { lo: 0, hi: 1, v, show: v.toFixed(2).replace(/0$/, ''), ticks: 0.1, labels: [0, 1] }; }
+  if (r < 8) { const v = rnd(-9, 9) || -4; return { lo: -10, hi: 10, v, show: String(v).replace('-', '−'), ticks: 0, labels: [-10, 0, 10] }; }
+  const d = pick([2, 4, 3]), w = rnd(1, 2), n = rnd(1, d - 1), neg = Math.random() < .5 ? -1 : 1, v = neg * (w + n / d);
+  return { lo: -3, hi: 3, v, show: (neg < 0 ? '−' : '') + w + ' ' + frac(n, d), ticks: 1, labels: [-3, 0, 3] };
+}
+const X = v => X0 + (v - cur.lo) / (cur.hi - cur.lo) * (X1 - X0);
+function drawLine(extra = '') {
+  let s = `<line x1="${X0 - 12}" y1="${LY}" x2="${X1 + 12}" y2="${LY}" stroke="#2b2d3a" stroke-width="4" stroke-linecap="round"/>`;
+  if (cur.ticks) for (let v = cur.lo; v <= cur.hi + 1e-9; v += cur.ticks) s += `<line x1="${X(v)}" y1="${LY - 8}" x2="${X(v)}" y2="${LY + 8}" stroke="#2b2d3a" stroke-width="2"/>`;
+  cur.labels.forEach(v => { s += `<line x1="${X(v)}" y1="${LY - 14}" x2="${X(v)}" y2="${LY + 14}" stroke="#2b2d3a" stroke-width="3"/><text x="${X(v)}" y="${LY + 40}" font-size="20" font-weight="800" fill="#2b2d3a" text-anchor="middle" font-family="system-ui,sans-serif">${String(v).replace('-', '−')}</text>`; });
+  $('line').innerHTML = s + extra;
+}
+function newRound() {
+  cur = makeRound(round); answered = false;
+  $('round').textContent = round + 1; $('target').innerHTML = cur.show;
+  $('msg').textContent = 'Tap where it goes on the line.'; $('next').hidden = true;
+  drawLine();
+}
+$('board').addEventListener('pointerdown', e => {
+  if (answered || !cur) return;
+  const r = $('line').getBoundingClientRect(), px = (e.clientX - r.left) / r.width * 520;
+  if (px < X0 - 20 || px > X1 + 20) return;
+  answered = true;
+  const guess = cur.lo + (Math.min(Math.max(px, X0), X1) - X0) / (X1 - X0) * (cur.hi - cur.lo);
+  const err = Math.abs(guess - cur.v) / (cur.hi - cur.lo);          // error as a share of the whole line
+  const pts = Math.max(0, Math.round(100 - err * 500));             // 20% of the line off = 0 points
+  score += pts; $('score').textContent = score;
+  const gx = Math.min(Math.max(px, X0), X1), ax = X(cur.v);
+  drawLine(`<line x1="${gx}" y1="${LY - 30}" x2="${gx}" y2="${LY + 4}" stroke="#2f6fd6" stroke-width="4"/><polygon points="${gx - 8},${LY - 34} ${gx + 8},${LY - 34} ${gx},${LY - 22}" fill="#2f6fd6"/>
+    <circle cx="${ax}" cy="${LY}" r="9" fill="#e8505b" stroke="#fff" stroke-width="3"/><text x="${ax}" y="${LY - 42}" font-size="14" font-weight="800" fill="#e8505b" text-anchor="middle">here</text>`);
+  $('msg').innerHTML = pts >= 95 ? `Perfect slice! <b>+${pts}</b>` : pts >= 70 ? `Close! <b>+${pts}</b>` : `The red dot shows where it goes. <b>+${pts}</b>`;
+  $('next').hidden = false; $('next').textContent = round === 9 ? 'See score' : 'Next';
+});
+$('next').onclick = () => { round++; if (round >= 10) end(); else newRound(); };
+function start() { round = 0; score = 0; $('score').textContent = 0; $('start').hidden = true; $('end').hidden = true; $('game').hidden = false; newRound(); }
+function end() {
+  const best = Math.max(getBest(), score); setBest(best);
+  $('final').textContent = score; $('bestEnd').textContent = score >= best && score > 0 ? 'New best!' : 'Best: ' + best;
+  $('game').hidden = true; $('end').hidden = false;
+}
+addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); if (!$('game').hidden && !$('next').hidden) $('next').click(); else if ($('game').hidden) start(); } });
+$('play').onclick = start; $('again').onclick = start;
+$('bestStart').textContent = getBest() ? 'Best: ' + getBest() : '';
+</script>
+</body>
+</html>

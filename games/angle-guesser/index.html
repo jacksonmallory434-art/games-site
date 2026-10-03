@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Angle Guesser</title>
+<style>
+  :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; touch-action: manipulation; }
+  body { display: flex; align-items: center; justify-content: center; padding: 12px; user-select: none; -webkit-user-select: none; }
+  .app { width: 100%; max-width: 460px; text-align: center; }
+  .hud { display: flex; justify-content: space-between; font-weight: 700; color: var(--muted); margin-bottom: 10px; }
+  .hud b { color: var(--text); }
+  .board { background: #f7f5ee; border-radius: 16px; }
+  svg { width: 100%; height: auto; display: block; }
+  .guess { font-size: 2.6rem; font-weight: 800; margin: 10px 0 2px; color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: #ffcc33; height: 34px; }
+  .nudge { display: flex; gap: 8px; justify-content: center; margin: 4px 0 10px; }
+  .nudge button { font: inherit; font-weight: 800; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .msg { min-height: 2.6em; font-weight: 700; color: var(--muted); margin: 4px 0 10px; }
+  .msg b { color: var(--good); }
+  button.go { font: inherit; font-weight: 800; font-size: 1.15rem; padding: 12px 30px; border: 0; border-radius: 12px; background: var(--accent); color: #111; cursor: pointer; }
+  .screen h1 { color: var(--accent); font-size: 2.3rem; margin: 0 0 8px; }
+  .screen p { color: var(--muted); margin: 6px 0; }
+  .screen .big { font-size: 3rem; font-weight: 800; color: var(--text); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="screen" id="start">
+    <h1>Angle Guesser</h1>
+    <p>How big is the angle? Slide to your guess and lock it in.</p>
+    <p>10 rounds, up to 100 points each. Within 2° is perfect.</p>
+    <p>Later rounds include reflex angles bigger than 180°.</p>
+    <p id="bestStart"></p>
+    <button class="go" id="play">Start</button>
+  </section>
+  <section id="game" hidden>
+    <div class="hud"><span>Round <b id="round">1</b>/10</span><span>Score <b id="score">0</b></span></div>
+    <div class="board"><svg id="fig" viewBox="0 0 300 220"></svg></div>
+    <div class="guess" id="guess">90°</div>
+    <input type="range" id="slider" min="1" max="180" value="90" aria-label="Your guess in degrees">
+    <div class="nudge"><button data-d="-5">−5</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="5">+5</button></div>
+    <p class="msg" id="msg"></p>
+    <button class="go" id="act">Lock it in</button>
+  </section>
+  <section class="screen" id="end" hidden>
+    <h1>Great eye!</h1>
+    <p>Total score (out of 1000)</p>
+    <div class="big" id="final">0</div>
+    <p id="bestEnd"></p>
+    <button class="go" id="again">Play again</button>
+  </section>
+</div>
+<script>
+// Angle Guesser — a MathAdvice original.
+const KEY = 'ma-angleguesser-best';
+const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
+const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const R = d => d * Math.PI / 180;
+const CX = 150, CY = 120, L = 100;
+
+let round, score, angle, rot, max, locked;
+function kind(a) { return a < 90 ? 'acute' : a === 90 ? 'right' : a < 180 ? 'obtuse' : a === 180 ? 'straight' : 'reflex'; }
+function arcPath(r, a0, a1) {
+  const p = a => [CX + r * Math.cos(R(a)), CY - r * Math.sin(R(a))];
+  const [x0, y0] = p(a0), [x1, y1] = p(a1);
+  return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 0 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+function draw(showGuess) {
+  const ray = a => `<line x1="${CX}" y1="${CY}" x2="${(CX + L * Math.cos(R(a))).toFixed(1)}" y2="${(CY - L * Math.sin(R(a))).toFixed(1)}" stroke="#2b2d3a" stroke-width="4" stroke-linecap="round"/>`;
+  let s = ray(rot) + ray(rot + angle);
+  s += `<path d="${arcPath(28, rot, rot + angle)}" fill="none" stroke="#2f6fd6" stroke-width="3"/>`;
+  if (angle === 90) s = ray(rot) + ray(rot + 90); // a right angle gets a square marker instead of an arc
+  if (angle === 90) { const u = [Math.cos(R(rot)), -Math.sin(R(rot))], v = [Math.cos(R(rot + 90)), -Math.sin(R(rot + 90))], k = 16;
+    s += `<path d="M${CX + u[0] * k} ${CY + u[1] * k} L${CX + (u[0] + v[0]) * k} ${CY + (u[1] + v[1]) * k} L${CX + v[0] * k} ${CY + v[1] * k}" fill="none" stroke="#2f6fd6" stroke-width="3"/>`; }
+  if (showGuess) {
+    const g = +$('slider').value;
+    s += `<line x1="${CX}" y1="${CY}" x2="${(CX + L * 1.1 * Math.cos(R(rot + g))).toFixed(1)}" y2="${(CY - L * 1.1 * Math.sin(R(rot + g))).toFixed(1)}" stroke="#e8505b" stroke-width="3" stroke-dasharray="6 5"/>`;
+  }
+  s += `<circle cx="${CX}" cy="${CY}" r="5" fill="#2b2d3a"/>`;
+  $('fig').innerHTML = s;
+}
+function newRound() {
+  max = round < 6 ? 180 : 360;
+  angle = round < 2 ? rnd(2, 17) * 10 : rnd(10, max - 10);
+  if (Math.random() < .1 && round < 6) angle = 90;
+  rot = round < 3 ? 0 : rnd(0, 359);
+  locked = false;
+  const sl = $('slider'); sl.max = max; sl.value = Math.round(max / 2);
+  $('round').textContent = round + 1; $('msg').textContent = 'Slide to your guess.'; $('act').textContent = 'Lock it in';
+  update(); draw(false);
+}
+function update() { $('guess').textContent = $('slider').value + '°'; }
+$('slider').addEventListener('input', () => { if (!locked) update(); else $('slider').value = $('slider').dataset.locked; });
+document.querySelectorAll('.nudge button').forEach(b => b.onclick = () => { if (locked) return; const s = $('slider'); s.value = Math.min(max, Math.max(1, +s.value + +b.dataset.d)); update(); });
+$('act').onclick = () => {
+  if (!locked) {
+    locked = true;
+    const g = +$('slider').value; $('slider').dataset.locked = g;
+    const err = Math.abs(g - angle), pts = err <= 2 ? 100 : Math.max(0, Math.round(100 - (err - 2) * 3));
+    score += pts; $('score').textContent = score;
+    draw(true);
+    $('msg').innerHTML = `The angle is <b>${angle}°</b> (${kind(angle)}). You guessed ${g}°, off by ${err}°. <b>+${pts}</b>`;
+    $('act').textContent = round === 9 ? 'See score' : 'Next';
+  } else { round++; if (round >= 10) end(); else newRound(); }
+};
+addEventListener('keydown', e => {
+  if ($('game').hidden) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); start(); } return; }
+  if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); $('act').click(); }
+  else if (!locked && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); const s = $('slider'); s.value = Math.min(max, Math.max(1, +s.value + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 5 : 1))); update(); }
+});
+function start() { round = 0; score = 0; $('score').textContent = 0; $('start').hidden = true; $('end').hidden = true; $('game').hidden = false; newRound(); }
+function end() {
+  const best = Math.max(getBest(), score); setBest(best);
+  $('final').textContent = score; $('bestEnd').textContent = score >= best && score > 0 ? 'New best!' : 'Best: ' + best;
+  $('game').hidden = true; $('end').hidden = false;
+}
+$('play').onclick = start; $('again').onclick = start;
+$('bestStart').textContent = getBest() ? 'Best: ' + getBest() : '';
+</script>
+</body>
+</html>

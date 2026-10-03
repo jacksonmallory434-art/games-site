@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Exponent Express</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Exponent Express — a MathAdvice original.
+MathQuiz({ key: 'exponentexpress', title: 'Exponent Express',
+  intro: ['Powers, square roots, cube roots, and the zero exponent.', 'Hop on and see how far your streak can ride.'],
+  gen(level) {
+    const { rnd, pick, choices, frac } = MQ;
+    const types = level < 1 ? ['sq', 'root', 'pow'] : ['sq', 'root', 'pow', 'cube', 'croot', 'zero', 'negexp'];
+    const t = pick(types);
+    let board, ans, wrong, hint, opts;
+    if (t === 'sq') { const a = rnd(2, 15); ans = a * a; board = `${a}²`; wrong = [a * 2, a * a + a, (a - 1) * (a - 1)]; hint = `${a}² means ${a} × ${a}, not ${a} × 2.`; }
+    if (t === 'root') { const a = rnd(2, 15); ans = a; board = `√${a * a}`; wrong = [a * a / 2, a + 1, a - 1]; hint = `The square root asks: what number times itself makes ${a * a}?`; }
+    if (t === 'pow') { const a = pick([2, 3, 5, 10]), n = a === 2 ? rnd(3, 8) : a === 10 ? rnd(2, 5) : rnd(2, 4); ans = a ** n; board = `${a}<sup>${n}</sup>`; wrong = [a * n, a ** (n - 1), a ** (n + 1)]; hint = `${a}<sup>${n}</sup> means multiply ${n} copies of ${a} together.`; }
+    if (t === 'cube') { const a = rnd(2, 6); ans = a ** 3; board = `${a}³`; wrong = [a * 3, a * a, (a + 1) ** 3]; hint = `${a}³ = ${a} × ${a} × ${a}.`; }
+    if (t === 'croot') { const a = rnd(2, 6); ans = a; board = `∛${a ** 3}`; wrong = [a * a, a + 1, Math.round(a ** 3 / 3)]; hint = `The cube root asks: what number times itself three times makes ${a ** 3}?`; }
+    if (t === 'zero') { const a = rnd(2, 99); ans = 1; board = `${a}<sup>0</sup>`; wrong = [0, a, -1]; hint = 'Any nonzero number to the power 0 equals 1.'; }
+    if (t === 'negexp') {
+      const a = pick([2, 3, 4, 5, 10]), n = a <= 3 ? rnd(1, 3) : rnd(1, 2), d = a ** n;
+      board = `${a}<sup>−${n}</sup>`;
+      opts = choices(`1/${d}`, [`-${d}`, `${d}`, `1/${a * n}`, `-1/${d}`, `1/${d * a}`]).map(v => ({ value: v, label: v.includes('/') ? frac(v.split('/')[0], v.split('/')[1]) : v.replace('-', '−') }));
+      return { board: `<div class="big">${board}</div>`, q: 'Evaluate.', answer: `1/${d}`, options: opts, hint: 'A negative exponent means "one over": a<sup>−n</sup> = 1 / a<sup>n</sup>.' };
+    }
+    return { board: `<div class="big">${board}</div>`, q: 'Evaluate.', answer: ans, options: choices(ans, wrong.filter(v => Number.isInteger(v) && v >= 0), () => ans + rnd(-9, 9)), hint };
+  } });
+</script>
+</body>
+</html>

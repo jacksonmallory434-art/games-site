@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Metric Mania</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Metric Mania — a MathAdvice original.
+MathQuiz({ key: 'metricmania', title: 'Metric Mania',
+  intro: ['Convert between metric units: kilometers, meters, centimeters, millimeters, kilograms, grams, liters, and milliliters.'],
+  gen(level) {
+    const { rnd, pick, choices } = MQ;
+    const pairs = [['km', 'm', 1000], ['m', 'cm', 100], ['cm', 'mm', 10], ['kg', 'g', 1000], ['L', 'mL', 1000], ['m', 'mm', 1000]];
+    const [big, small, f] = pick(pairs), down = Math.random() < .5;
+    const fmt = v => (Math.round(v * 1000) / 1000).toString();
+    let val, ans;
+    if (down) { val = level < 1 ? rnd(1, 9) : rnd(1, 40) / (Math.random() < .5 ? 1 : 10); ans = val * f; }
+    else { ans = level < 1 ? rnd(1, 9) : rnd(1, 40) / (Math.random() < .5 ? 1 : 10); val = ans * f; }
+    const from = down ? big : small, to = down ? small : big;
+    const A = fmt(ans);
+    return { board: `<div class="big">${fmt(val)} ${from}</div>`, q: `How many <em>${to}</em> is that?`, answer: A,
+      options: choices(A, [fmt(ans * 10), fmt(ans / 10), fmt(down ? val / f : val * f)], () => fmt(ans * pick([100, 0.01, 2, 0.5]))).map(v => ({ value: v, label: v + ' ' + to })),
+      hint: `1 ${big} = ${f} ${small}. Going to a smaller unit, multiply by ${f}; going to a bigger unit, divide by ${f}.` };
+  } });
+</script>
+</body>
+</html>

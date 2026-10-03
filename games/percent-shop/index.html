@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Percent Shop</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Percent Shop — a MathAdvice original.
+MathQuiz({ key: 'percentshop', title: 'Percent Shop',
+  intro: ['Work the register: percents of numbers, sale prices, and "what percent is it?"', 'Fast, correct answers keep the line moving.'],
+  gen(level) {
+    const { rnd, pick, choices } = MQ;
+    const t = pick(level < 1 ? ['of', 'of', 'sale'] : ['of', 'sale', 'whatpct', 'tax']);
+    const pct = pick([10, 20, 25, 50, 75, 5, 15, 30, 40, 60]);
+    const base = pick([20, 40, 60, 80, 100, 120, 200, 40, 160, 240]);
+    const v = pct * base / 100;
+    if (t === 'of') return { board: `<div class="big">${pct}% of ${base}</div>`, q: 'How much is it?', answer: v,
+      options: choices(v, [base - v, v * 10, pct, v / 2].filter(Number.isInteger), () => Math.abs(v + rnd(-10, 10))),
+      hint: `Percent means "out of 100". ${pct}% of ${base} = ${pct} ÷ 100 × ${base}. Tip: 10% is just dividing by 10.` };
+    if (t === 'sale') return { board: `<div class="mid">🏷️ $${base} shoes<br>${pct}% off</div>`, q: 'What is the sale price?', answer: base - v,
+      options: choices(base - v, [v, base - pct, base + v].filter(x => Number.isInteger(x) && x > 0), () => base - v + rnd(-10, 10)).map(x => ({ value: x, label: '$' + x })),
+      hint: `Find the discount first (${pct}% of ${base} = ${v}), then subtract it from the price.` };
+    if (t === 'tax') { const p2 = pick([5, 10, 20]), b2 = pick([20, 40, 60, 80, 100]), t2 = p2 * b2 / 100;
+      return { board: `<div class="mid">🧾 $${b2} + ${p2}% tax</div>`, q: 'What is the total?', answer: b2 + t2,
+        options: choices(b2 + t2, [t2, b2 + p2, b2 - t2], () => b2 + t2 + rnd(-8, 8)).map(x => ({ value: x, label: '$' + x })),
+        hint: `Tax is ${p2}% of ${b2} = ${t2}. Add it to the price.` }; }
+    const part = v, whole = base;
+    return { board: `<div class="mid">${part} out of ${whole}</div>`, q: 'What percent is that?', answer: pct,
+      options: choices(pct, [100 - pct, Math.round(whole / part), pct / 2].filter(x => Number.isInteger(x) && x > 0 && x <= 100), () => pct + 5 * rnd(-4, 4)).map(x => ({ value: x, label: x + '%' })),
+      hint: `Divide the part by the whole, then multiply by 100: ${part} ÷ ${whole} × 100.` };
+  } });
+</script>
+</body>
+</html>

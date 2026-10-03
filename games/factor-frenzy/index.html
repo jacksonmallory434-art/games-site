@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Factor Frenzy</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Factor Frenzy — a MathAdvice original.
+MathQuiz({ key: 'factorfrenzy', title: 'Factor Frenzy',
+  intro: ['Find the greatest common factor (GCF) or least common multiple (LCM) of two numbers.'],
+  gen(level) {
+    const { rnd, choices, gcd } = MQ;
+    const k = rnd(2, 6 + level), a = k * rnd(1, 6 + level), b0 = k * rnd(1, 6 + level), b = b0 === a ? b0 + k : b0;
+    const G = gcd(a, b), L = a * b / G, askG = Math.random() < .5;
+    const ans = askG ? G : L;
+    return { board: `<div class="big">${a} and ${b}</div>`, q: askG ? 'What is the <em>GCF</em> (greatest common factor)?' : 'What is the <em>LCM</em> (least common multiple)?',
+      answer: ans, options: choices(ans, askG ? [L, Math.min(a, b), G * 2, G - 1].filter(v => v > 0) : [G, a * b, L * 2, Math.max(a, b)].filter(v => v !== L), () => Math.max(1, ans + rnd(-6, 6) * (askG ? 1 : 2))),
+      hint: askG ? 'GCF: the biggest number that divides both evenly. List the factors of each and find the largest shared one.'
+                 : 'LCM: the smallest number both divide into. List multiples of the bigger number until the smaller one divides it.' };
+  } });
+</script>
+</body>
+</html>

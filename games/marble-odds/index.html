@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Marble Odds</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Marble Odds — a MathAdvice original.
+MathQuiz({ key: 'marbleodds', title: 'Marble Odds',
+  intro: ['A bag of marbles. You reach in without looking.', 'What is the probability of pulling out a certain color? Answers are simplified fractions.'],
+  gen(level) {
+    const { rnd, pick, choices, frac, gcd, shuffle } = MQ;
+    const COLORS = [['red', '#e8505b'], ['blue', '#2f6fd6'], ['green', '#3ecf8e'], ['yellow', '#f2b705']];
+    const k = level < 1 ? 2 : pick([2, 3, 3, 4]);
+    const used = COLORS.slice(0, k); let counts;
+    do { counts = used.map(() => rnd(1, 6)); } while (counts.reduce((a, b) => a + b, 0) < 6); // enough marbles for 4 different answers
+    const total = counts.reduce((a, b) => a + b, 0), ti = rnd(0, k - 1), n = counts[ti];
+    const red = (a, b) => { if (a === 0) return '0'; const g = gcd(a, b); return b / g === 1 ? String(a / g) : `${a / g}/${b / g}`; };
+    const label = s => s.includes('/') ? frac(...s.split('/')) : s;
+    const ans = red(n, total);
+    const others = counts.map((c, i) => i === ti ? null : red(c, total));
+    const wrong = [red(total - n, total), ...others, n < total - n ? red(n, total - n) : null, red(Math.min(n + 1, total), total)].filter(Boolean);
+    let marbles = []; used.forEach(([, col], i) => { for (let j = 0; j < counts[i]; j++) marbles.push(col); }); shuffle(marbles);
+    const cols = 6, svg = marbles.map((c, i) => `<circle cx="${40 + (i % cols) * 36}" cy="${40 + Math.floor(i / cols) * 36}" r="15" fill="${c}" stroke="rgba(0,0,0,.2)" stroke-width="2"/>`).join('');
+    const rows = Math.ceil(marbles.length / cols);
+    return { board: `<svg viewBox="0 0 260 ${rows * 36 + 44}" style="max-width:280px">${svg}</svg><div style="font-weight:700;color:#6b6f85">${used.map(([nm], i) => counts[i] + ' ' + nm).join(' · ')}</div>`,
+      q: `Probability of pulling a <em>${used[ti][0]}</em> marble?`, answer: ans,
+      options: choices(ans, wrong, () => red(rnd(1, total), total)).map(v => ({ value: v, label: label(v) })),
+      hint: `Probability = (number of ${used[ti][0]} marbles) ÷ (total marbles) = ${n} ÷ ${total}, then simplify.` };
+  } });
+</script>
+</body>
+</html>

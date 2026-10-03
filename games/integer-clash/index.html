@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Integer Clash</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Integer Clash — a MathAdvice original.
+MathQuiz({ key: 'integerclash', title: 'Integer Clash',
+  intro: ['Add, subtract, multiply, and divide with negative numbers.', 'Problems get bigger the longer your streak lasts.'],
+  gen(level) {
+    const { rnd, pick, choices, neg } = MQ;
+    const m = 6 + level * 4, nz = () => { let v; do { v = rnd(-m, m); } while (v === 0); return v; };
+    const op = pick(level < 1 ? ['+', '−'] : ['+', '−', '×', '÷']);
+    let a = nz(), b = nz(), ans;
+    if (op === '+') ans = a + b;
+    if (op === '−') ans = a - b;
+    if (op === '×') { a = rnd(-9, 9) || 2; b = rnd(-9, 9) || -3; ans = a * b; }
+    if (op === '÷') { b = rnd(-9, 9) || -2; ans = rnd(-9, 9) || 4; a = b * ans; }
+    const show = v => v < 0 ? `(${neg(v)})` : v;
+    const wrong = op === '+' ? [a - b, -ans, -(a - b)] : op === '−' ? [a + b, -ans, -(a + b)] : [-ans, ans + (ans > 0 ? -1 : 1) * 2];
+    return {
+      board: `<div class="big">${neg(a)} ${op} ${show(b)}</div>`, q: 'What is the answer?',
+      answer: ans,
+      options: choices(ans, wrong, () => ans + rnd(-6, 6)).map(v => ({ value: v, label: neg(v) })),
+      hint: op === '×' || op === '÷' ? 'Same signs give a positive answer. Different signs give a negative answer.'
+        : 'Subtracting a negative is the same as adding a positive. Think of a number line: + moves right, − moves left.'
+    };
+  } });
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Quadratic Quest</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Quadratic Quest — a MathAdvice original.
+MathQuiz({ key: 'quadraticquest', title: 'Quadratic Quest',
+  intro: ['Factor each quadratic to find where it equals zero.', 'If x² + bx + c = (x − r)(x − s), the solutions are x = r and x = s.'],
+  gen(level) {
+    const { rnd, choices } = MQ;
+    let r, s; do { r = rnd(-9, 9); s = rnd(-9, 9); } while (r === 0 || s === 0 || (level < 1 && (r < 0 || s < 0)));
+    const b = -(r + s), c = r * s;
+    const term = (k, x) => k === 0 ? '' : (k > 0 ? ' + ' : ' − ') + (Math.abs(k) === 1 && x ? '' : Math.abs(k)) + x;
+    const eq = `x²${term(b, 'x')}${term(c, '')} = 0`;
+    const pair = (p, q) => { const [a, z] = [p, q].sort((u, v) => u - v); return a === z ? `x = ${a}`.replace(/-/g, '−') : `x = ${a}, ${z}`.replace(/-/g, '−'); };
+    const ans = pair(r, s);
+    return { board: `<div class="big">${eq}</div>`, q: 'What are the solutions?', answer: ans,
+      options: choices(ans, [pair(-r, -s), pair(r, -s), pair(-r, s)].filter(v => v !== ans), () => pair(rnd(-9, 9) || 1, rnd(-9, 9) || 2)),
+      hint: `Find two numbers that multiply to ${c} and add to ${b}. Those are −r and −s, so flip their signs for the answers.`.replace(/-/g, '−') };
+  } });
+</script>
+</body>
+</html>
