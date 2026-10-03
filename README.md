@@ -3,7 +3,7 @@
 Plain HTML/CSS/JS. No build step.
 
 ## Files
-- `games.json` – your game list. Add one entry per game from your network dashboard.
+- `games.json` – your game list. One entry per game.
 - `index.html` + `js/app.js` – homepage grid, search, categories.
 - `game.html` + `js/game.js` – game page (`game.html?slug=...`).
 - `about.html`, `privacy.html` – needed for ad network approval. Replace every ALL-CAPS placeholder.
@@ -12,7 +12,7 @@ Plain HTML/CSS/JS. No build step.
 ## Adding a game
 Copy an entry in `games.json` and fill in:
 - `slug` – short id in lowercase with dashes, e.g. `bubble-shooter`
-- `embed` – the game URL from your network's dashboard (the `src` of their iframe code)
+- `embed` – path to the game's page on this site, e.g. `games/2048/index.html`
 - `width` / `height` – from their iframe code
 - `thumb` – the thumbnail image URL they provide (or leave `""` for a colored placeholder)
 - `description` / `howto` – write these yourself; original text helps with AdSense approval
