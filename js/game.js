@@ -16,7 +16,7 @@ async function init() {
     return;
   }
 
-  document.title = `${g.title} – Play Free`;
+  document.title = `${g.title} – MathAdvice`;
   document.getElementById('title').textContent = g.title;
   document.getElementById('desc').textContent = g.description;
   document.getElementById('howto').textContent = g.howto;
