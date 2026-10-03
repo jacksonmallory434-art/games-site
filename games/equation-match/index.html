@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Memory Match</title>
+<title>Equation Match</title>
 <style>
   :root { --bg: #12131a; --panel: #1c1e29; --line: #2c2f3e; --text: #ecedf3; --muted: #9a9db0; --accent: #ffcc33; --good: #3ecf8e; }
   * { box-sizing: border-box; }
@@ -22,7 +22,8 @@
     background-image: linear-gradient(#d6e4f0 1px, transparent 1px), linear-gradient(90deg, #d6e4f0 1px, transparent 1px);
     background-size: 14px 14px; color: #3d6fb6; font-weight: 800; font-size: 1.5rem;
   }
-  .front { background: var(--panel); border: 2px solid var(--line); transform: rotateY(180deg); font-size: clamp(1.8rem, 9vw, 2.6rem); }
+  .front { background: var(--panel); border: 2px solid var(--line); transform: rotateY(180deg); font-weight: 800; color: var(--text); font-size: clamp(1rem, 5vw, 1.4rem); text-align: center; padding: 4px; }
+  .front.a { font-size: clamp(1.5rem, 8vw, 2.2rem); color: var(--accent); }
   .card.done .front { border-color: var(--good); }
   .win { text-align: center; margin-top: 16px; }
   .win h2 { color: var(--accent); margin: 0 0 4px; font-size: 1.8rem; }
@@ -40,19 +41,36 @@
   </div>
   <div class="grid" id="grid"></div>
   <div class="win" id="win" hidden>
-    <h2>All matched!</h2>
+    <h2>All solved!</h2>
     <p id="result"></p>
     <p id="best"></p>
     <button id="again" type="button">Play again</button>
   </div>
 </div>
 <script>
-// Memory Match — a MathAdvice original.
-const KEY = 'ma-memory-best';
+// Equation Match — a MathAdvice original.
+const KEY = 'ma-equationmatch-best';
 const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
 const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
 const $ = id => document.getElementById(id);
-const SYMBOLS = ['🍕', '🚀', '🎸', '🐙', '🌵', '⚽', '🎲', '🍩'];
+const PAIRS = 8;
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+// Make 8 problems with 8 different answers. Each pair is a problem card + its answer card.
+function makePairs() {
+  const used = new Set(), pairs = [];
+  while (pairs.length < PAIRS) {
+    const op = ['+', '−', '×', '÷'][rnd(0, 3)];
+    let a, b, ans;
+    if (op === '+') { a = rnd(2, 30); b = rnd(2, 30); ans = a + b; }
+    if (op === '−') { a = rnd(10, 50); b = rnd(1, a - 1); ans = a - b; }
+    if (op === '×') { a = rnd(2, 12); b = rnd(2, 12); ans = a * b; }
+    if (op === '÷') { b = rnd(2, 10); ans = rnd(2, 12); a = b * ans; }
+    if (used.has(ans)) continue;
+    used.add(ans);
+    pairs.push({ key: ans, problem: `${a} ${op} ${b}`, answer: String(ans) });
+  }
+  return pairs;
+}
 
 let open = [], matched = 0, moves = 0, startTime = 0, timerId = null, busy = false;
 
@@ -62,9 +80,9 @@ function newGame() {
   open = []; matched = 0; moves = 0; busy = false; startTime = 0;
   clearInterval(timerId); timerId = null;
   $('moves').textContent = 0; $('time').textContent = '0:00'; $('win').hidden = true;
-  const deck = shuffle([...SYMBOLS, ...SYMBOLS]);
+  const deck = shuffle(makePairs().flatMap(p => [{ key: p.key, text: p.problem, cls: 'q' }, { key: p.key, text: p.answer, cls: 'a' }]));
   $('grid').innerHTML = deck.map((s, i) =>
-    `<button class="card" data-s="${s}" aria-label="Card ${i + 1}"><span class="face back">?</span><span class="face front">${s}</span></button>`
+    `<button class="card" data-s="${s.key}" aria-label="Card ${i + 1}"><span class="face back">?</span><span class="face front ${s.cls}">${s.text}</span></button>`
   ).join('');
 }
 
@@ -81,7 +99,7 @@ $('grid').addEventListener('click', e => {
   const [a, b] = open;
   if (a.dataset.s === b.dataset.s) {
     a.classList.add('done'); b.classList.add('done'); open = []; matched++;
-    if (matched === SYMBOLS.length) win();
+    if (matched === PAIRS) win();
   } else {
     busy = true;
     setTimeout(() => { a.classList.remove('up'); b.classList.remove('up'); open = []; busy = false; }, 800);

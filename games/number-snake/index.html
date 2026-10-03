@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Grid Snake</title>
+<title>Number Snake</title>
 <style>
   html, body { margin: 0; height: 100%; background: #12131a; overflow: hidden; touch-action: none; }
   body { display: flex; align-items: center; justify-content: center; }
@@ -13,8 +13,8 @@
 <body>
 <canvas id="c"></canvas>
 <script>
-// Grid Snake — a MathAdvice original.
-const N = 20, CELL = 24, HUD = 60, W = N * CELL, H = N * CELL + HUD;
+// Number Snake — a MathAdvice original.
+const N = 18, CELL = 26, HUD = 70, W = N * CELL, H = N * CELL + HUD;
 const c = document.getElementById('c'), ctx = c.getContext('2d');
 function fit() {
   const s = Math.min(innerWidth / W, innerHeight / H), d = devicePixelRatio || 1;
@@ -24,23 +24,39 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
-const KEY = 'ma-gridsnake-best';
+const KEY = 'ma-numbersnake-best';
 const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
 const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
-let snake, dir, queue, food, bonus, score, best = getBest(), state, tickMs, acc, eaten;
+let snake, dir, queue, foods, rule, score, best = getBest(), state, tickMs, acc, eaten, hurt;
+
+function newRule() {
+  let n;
+  do { n = rnd(2, 9); } while (rule && n === rule);
+  rule = n;
+}
+function isGood(v) { return v % rule === 0; }
+function occupied(x, y) {
+  return snake.some(s => s.x === x && s.y === y) || foods.some(f => f.x === x && f.y === y);
+}
+function addFood(good) {
+  let x, y;
+  do { x = rnd(0, N - 1); y = rnd(0, N - 1); } while (occupied(x, y));
+  let v;
+  if (good) v = rule * rnd(1, 12);
+  else do { v = rnd(2, rule * 12); } while (isGood(v));
+  foods.push({ x, y, v });
+}
+function refillFoods() {
+  foods = [];
+  for (let i = 0; i < 6; i++) addFood(i < 3);
+}
 function reset() {
-  snake = [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }];
-  dir = { x: 1, y: 0 }; queue = []; score = 0; tickMs = 140; acc = 0; eaten = 0;
-  bonus = null; placeFood(); state = 'ready';
+  snake = [{ x: 6, y: 9 }, { x: 5, y: 9 }, { x: 4, y: 9 }];
+  dir = { x: 1, y: 0 }; queue = []; score = 0; tickMs = 170; acc = 0; eaten = 0; hurt = 0;
+  rule = null; newRule(); foods = []; refillFoods(); state = 'ready';
 }
-function freeCell() {
-  while (true) {
-    const p = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N) };
-    if (!snake.some(s => s.x === p.x && s.y === p.y) && !(food && food.x === p.x && food.y === p.y)) return p;
-  }
-}
-function placeFood() { food = null; food = freeCell(); }
 reset();
 
 const DIRS = {
@@ -51,8 +67,7 @@ function turn(dx, dy) {
   if (state === 'over') return;
   if (state === 'ready') state = 'play';
   const lastDir = queue.length ? queue[queue.length - 1] : dir;
-  if (dx === -lastDir.x && dy === -lastDir.y) return; // no reversing into yourself
-  if (dx === lastDir.x && dy === lastDir.y) return;
+  if ((dx === -lastDir.x && dy === -lastDir.y) || (dx === lastDir.x && dy === lastDir.y)) return;
   if (queue.length < 3) queue.push({ x: dx, y: dy });
 }
 addEventListener('keydown', e => {
@@ -60,10 +75,7 @@ addEventListener('keydown', e => {
   else if ((e.code === 'Space' || e.code === 'Enter') && state !== 'play') { e.preventDefault(); if (state === 'over') reset(); else state = 'play'; }
 });
 let touchStart = null;
-c.addEventListener('pointerdown', e => {
-  touchStart = { x: e.clientX, y: e.clientY };
-  if (state === 'over') reset();
-});
+c.addEventListener('pointerdown', e => { touchStart = { x: e.clientX, y: e.clientY }; if (state === 'over') reset(); });
 c.addEventListener('pointerup', e => {
   if (!touchStart) return;
   const dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
@@ -75,82 +87,77 @@ c.addEventListener('pointerup', e => {
 function step() {
   if (queue.length) dir = queue.shift();
   const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
-  // Walls end the game.
   if (head.x < 0 || head.y < 0 || head.x >= N || head.y >= N) return die();
-  // Hitting yourself ends the game (the tail moves out of the way first).
-  const willGrow = (head.x === food.x && head.y === food.y) || (bonus && head.x === bonus.x && head.y === bonus.y);
-  const body = willGrow ? snake : snake.slice(0, -1);
+  const fi = foods.findIndex(f => f.x === head.x && f.y === head.y);
+  const body = fi >= 0 ? snake : snake.slice(0, -1);
   if (body.some(s => s.x === head.x && s.y === head.y)) return die();
   snake.unshift(head);
-  if (head.x === food.x && head.y === food.y) {
+  if (fi < 0) { snake.pop(); return; }
+  const f = foods.splice(fi, 1)[0];
+  if (isGood(f.v)) {
     score += 1; eaten++;
-    tickMs = Math.max(65, 140 - eaten * 3);
-    placeFood();
-    if (!bonus && eaten % 5 === 0) bonus = { ...freeCell(), life: 40 };
-  } else if (bonus && head.x === bonus.x && head.y === bonus.y) {
-    score += 5; bonus = null;
+    tickMs = Math.max(85, 170 - eaten * 3);
+    if (eaten % 6 === 0) { newRule(); refillFoods(); }
+    else addFood(true);
   } else {
+    // Wrong number: lose 3 segments.
+    hurt = 0.4;
     snake.pop();
+    if (snake.length <= 4) { snake.splice(1); return die(); }
+    snake.splice(-3, 3);
+    addFood(false);
   }
-  if (bonus && --bonus.life <= 0) bonus = null;
+  if (!foods.some(x => isGood(x.v))) addFood(true);
 }
-function die() {
-  state = 'over';
-  if (score > best) { best = score; setBest(best); }
-}
+function die() { state = 'over'; if (score > best) { best = score; setBest(best); } }
 
 function draw() {
   ctx.fillStyle = '#1c1e29'; ctx.fillRect(0, 0, W, H);
-  // HUD
-  ctx.fillStyle = '#ecedf3'; ctx.font = '800 26px system-ui, sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('Score ' + score, 16, 40);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#9a9db0'; ctx.fillText('Best ' + best, W - 16, 40);
-  // Graph paper board
+  ctx.textAlign = 'left'; ctx.fillStyle = '#9a9db0'; ctx.font = '700 18px system-ui, sans-serif';
+  ctx.fillText('Score ' + score, 14, 26);
+  ctx.textAlign = 'right'; ctx.fillText('Best ' + best, W - 14, 26);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffcc33'; ctx.font = '800 26px system-ui, sans-serif';
+  ctx.fillText('Eat multiples of ' + rule, W / 2, 58);
+
   ctx.save(); ctx.translate(0, HUD);
-  ctx.fillStyle = '#f7f5ee'; ctx.fillRect(0, 0, W, W);
+  ctx.fillStyle = hurt > 0 ? '#fbe3e3' : '#f7f5ee'; ctx.fillRect(0, 0, W, W);
   ctx.strokeStyle = '#d6e4f0'; ctx.lineWidth = 1;
   for (let i = 0; i <= N; i++) {
     ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, W); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(W, i * CELL); ctx.stroke();
   }
-  // Food: a little "+1"
-  ctx.fillStyle = '#e8505b';
-  ctx.beginPath(); ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * 0.38, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('+1', food.x * CELL + CELL / 2, food.y * CELL + CELL / 2 + 4);
-  // Bonus: a blinking "+5" star
-  if (bonus && (bonus.life > 12 || bonus.life % 2)) {
-    ctx.fillStyle = '#ffcc33';
-    ctx.beginPath(); ctx.arc(bonus.x * CELL + CELL / 2, bonus.y * CELL + CELL / 2, CELL * 0.46, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2b2d3a'; ctx.fillText('+5', bonus.x * CELL + CELL / 2, bonus.y * CELL + CELL / 2 + 4);
+  for (const f of foods) {
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#e8505b'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(f.x * CELL + CELL / 2, f.y * CELL + CELL / 2, CELL * 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#2b2d3a'; ctx.font = `800 ${f.v >= 100 ? 10 : 13}px system-ui, sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(f.v, f.x * CELL + CELL / 2, f.y * CELL + CELL / 2 + 4.5);
   }
-  // Snake
   snake.forEach((s, i) => {
     ctx.fillStyle = i === 0 ? '#2f6fd6' : (i % 2 ? '#4a8cf0' : '#5b98f2');
     const pad = i === 0 ? 1 : 2;
     ctx.beginPath(); ctx.roundRect(s.x * CELL + pad, s.y * CELL + pad, CELL - pad * 2, CELL - pad * 2, 6); ctx.fill();
   });
-  // Eyes
   const h = snake[0], ex = h.x * CELL + CELL / 2, ey = h.y * CELL + CELL / 2;
-  ctx.fillStyle = '#fff';
   const px = dir.y !== 0 ? 5 : 0, py = dir.x !== 0 ? 5 : 0;
+  ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(ex + dir.x * 5 + px, ey + dir.y * 5 + py, 3, 0, 7); ctx.arc(ex + dir.x * 5 - px, ey + dir.y * 5 - py, 3, 0, 7); ctx.fill();
   ctx.restore();
 
-  ctx.textAlign = 'center';
-  if (state === 'ready') overlay('Grid Snake', 'Arrow keys / WASD, or swipe', 'Press any arrow to start');
+  if (state === 'ready') overlay('Number Snake', 'Eat only the numbers that fit the rule.', 'Wrong numbers cost 3 segments. Arrow keys / WASD or swipe to start.');
   if (state === 'over') overlay('Game over', 'Score ' + score + '   Best ' + best, 'Tap or press Space to play again');
 }
 function overlay(a, b, cText) {
-  ctx.fillStyle = 'rgba(18,19,26,.72)'; ctx.fillRect(0, HUD, W, W);
-  ctx.fillStyle = '#ffcc33'; ctx.font = '800 40px system-ui, sans-serif'; ctx.fillText(a, W / 2, HUD + W / 2 - 30);
-  ctx.fillStyle = '#fff'; ctx.font = '600 20px system-ui, sans-serif'; ctx.fillText(b, W / 2, HUD + W / 2 + 12);
-  ctx.fillStyle = '#c8cad6'; ctx.font = '500 17px system-ui, sans-serif'; ctx.fillText(cText, W / 2, HUD + W / 2 + 46);
+  ctx.fillStyle = 'rgba(18,19,26,.78)'; ctx.fillRect(0, HUD, W, W);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffcc33'; ctx.font = '800 38px system-ui, sans-serif'; ctx.fillText(a, W / 2, HUD + W / 2 - 34);
+  ctx.fillStyle = '#fff'; ctx.font = '600 19px system-ui, sans-serif'; ctx.fillText(b, W / 2, HUD + W / 2 + 6);
+  ctx.fillStyle = '#c8cad6'; ctx.font = '500 14px system-ui, sans-serif'; ctx.fillText(cText, W / 2, HUD + W / 2 + 38);
 }
 
 let last = performance.now();
 function loop(t) {
   const dt = Math.min(t - last, 250); last = t;
+  hurt = Math.max(0, hurt - dt / 1000);
   if (state === 'play') { acc += dt; while (acc >= tickMs && state === 'play') { acc -= tickMs; step(); } }
   draw();
   requestAnimationFrame(loop);

@@ -71,15 +71,6 @@ main { max-width: 1200px; margin: 0 auto; padding: 0 16px 32px; }
 .info h2 { font-size: 1.05rem; margin: 14px 0 4px; }
 .credit { color: var(--muted); font-size: .85rem; }
 
-.retro-banner {
-  display: flex; align-items: center; gap: 14px; margin: 0 0 16px; padding: 14px 18px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  color: var(--text); text-decoration: none; transition: border-color .12s;
-}
-.retro-banner:hover, .retro-banner:focus-visible { border-color: var(--accent); }
-.retro-banner strong { color: var(--accent); }
-.retro-icon { font-size: 2rem; }
-
 .foot { text-align: center; color: var(--muted); padding: 24px 16px; border-top: 1px solid var(--line); }
 .page { max-width: 720px; }
 
