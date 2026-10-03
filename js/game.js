@@ -21,6 +21,16 @@ async function init() {
   document.getElementById('desc').textContent = g.description;
   document.getElementById('howto').textContent = g.howto;
   document.getElementById('source').textContent = g.source;
+  if (g.license) {
+    const lic = document.getElementById('lic');
+    lic.append(' License: ' + g.license + '. ');
+    if (g.url) {
+      const link = document.createElement('a');
+      link.href = g.url; link.target = '_blank'; link.rel = 'noopener';
+      link.textContent = 'Original project';
+      lic.append(link);
+    }
+  }
   document.getElementById('mobile').textContent = g.mobile ? '📱 Works on phones' : '⌨️ Needs a keyboard';
 
   // Keep the game's shape on any screen size.
