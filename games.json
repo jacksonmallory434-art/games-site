@@ -1,0 +1,41 @@
+[
+  {
+    "slug": "example-puzzle",
+    "title": "Example Puzzle",
+    "category": "Puzzle",
+    "thumb": "",
+    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
+    "width": 800,
+    "height": 600,
+    "mobile": true,
+    "description": "Write 2-3 sentences in your own words about what the game is.",
+    "howto": "Explain the controls, e.g. Use the arrow keys to move. Press Space to jump.",
+    "source": "GameMonetize"
+  },
+  {
+    "slug": "example-racing",
+    "title": "Example Racing",
+    "category": "Racing",
+    "thumb": "",
+    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
+    "width": 960,
+    "height": 540,
+    "mobile": false,
+    "description": "Write 2-3 sentences in your own words about what the game is.",
+    "howto": "Explain the controls.",
+    "source": "GameMonetize"
+  },
+  {
+    "slug": "example-arcade",
+    "title": "Example Arcade",
+    "category": "Arcade",
+    "thumb": "",
+    "embed": "PASTE-EMBED-URL-FROM-YOUR-NETWORK-DASHBOARD",
+    "width": 800,
+    "height": 600,
+    "mobile": true,
+    "description": "Write 2-3 sentences in your own words about what the game is.",
+    "howto": "Explain the controls.",
+    "source": "GameMonetize"
+  }
+]
