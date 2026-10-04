@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Number Golf</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // [tee, hole, clubs, water]
+  const HOLES = [
+    [2, 10, ['+3', '*2'], []],
+    [1, 12, ['+1', '*3'], []],
+    [7, 1, ['/2', '-3', '+1'], []],
+    [3, 24, ['*2', '+2'], [6]],
+    [-6, 14, ['*-1', '+4', '/3'], []],
+    [10, 3, ['/2', '-1', '*3'], [5]],
+    [2, 100, ['*2', '*5', '+3', '-2'], [4, 10]],
+    [9, 64, ['*2', '-1', '+5'], [18, 14]],
+    [100, 3, ['/2', '/5', '-3', '+1'], [50]],
+    [7, 1, ['/2', '-3', '+1'], [4]],
+    [5, -3, ['-4', '*2', '+1'], [1]],
+    [2, 81, ['*3', '-1', '+2', '*2'], [6]],
+  ];
+  const NAMES = { '+': 'Wood', '-': 'Wedge', '*': 'Driver', '/': 'Putter' };
+  const LINE_Y = 360;
+
+  function apply(v, club) {
+    const op = club[0], n = +club.slice(1);
+    if (op === '+') return v + n;
+    if (op === '-') return v - n;
+    if (op === '*') return v * n;
+    return v % n === 0 ? v / n : null;
+  }
+  const label = c => c === '*-1' ? '×(−1)' : c.replace('*', '×').replace('/', '÷').replace('-', '−');
+  const clubName = c => c === '*-1' ? 'Flipper' : NAMES[c[0]];
+  function solve(tee, hole, clubs, water) {
+    const seen = new Set([tee]); let q = [[tee, 0]];
+    while (q.length) {
+      const [v, d] = q.shift();
+      if (v === hole) return d;
+      for (const c of clubs) {
+        const n = apply(v, c);
+        if (n === null || seen.has(n) || Math.abs(n) > 400 || water.includes(n)) continue;
+        seen.add(n); q.push([n, d + 1]);
+      }
+    }
+    return 9;
+  }
+
+  let hole = 0, H, ball, strokes, par, trail, shot, view = { a: -2, b: 14 }, buttons = [], hoverClub = -1, phase = 'aim', sunk = 0;
+  let stars = [];
+
+  const K = window.K = MA.game({
+    slug: 'number-golf', title: 'Number Golf', accent: '#7ee36b', accent2: '#2ee6c5', bg: ['#071a1c', '#0b1330'],
+    tagline: 'Every club does math to your ball. Land exactly on the hole in as few strokes as you can.',
+    how: [
+      'Your ball sits on a number line. Each club changes its number: <b>+3</b>, <b>×2</b>, <b>÷2</b>…',
+      'Land exactly on the flag to sink the putt.',
+      'Water hazards cost a penalty stroke and send you back.',
+      'Beat par for a Birdie and three stars.',
+    ],
+    noMenu: true,
+    update, draw,
+    move(x, y) { hoverClub = buttons.findIndex(b => !b.disabled && K.hit(b, x, y)); },
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(restartBtn, x, y)) return loadHole(hole);
+      const i = buttons.findIndex(b => !b.disabled && K.hit(b, x, y));
+      if (i >= 0) swing(i);
+    },
+    key(k) {
+      if (K.state !== 'play') return;
+      if (k >= '1' && k <= '4') swing(+k - 1);
+      if (k === 'r' || k === 'R') loadHole(hole);
+    },
+  });
+  const restartBtn = { x: 690, y: 22, w: 88, h: 40, label: 'Retry', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  stars = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = stars.reduce((a, b) => a + (b || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Number Golf',
+      sub: 'Every club does math to your ball. Land exactly on the hole in as few strokes as you can.',
+      how: K.menuHow,
+      html: `<p class="ma-best">★ ${total} / ${HOLES.length * 3} stars</p>`,
+      levels: { n: HOLES.length, unlocked: Math.min(HOLES.length - 1, stars.filter(Boolean).length), stars, on: i => { K.state = 'play'; loadHole(i); } },
+      buttons: [],
+    });
+  }
+  K.menuHow = [
+    'Each club changes your ball\'s number: <b>+3</b>, <b>×2</b>, <b>÷2</b>…',
+    'Land exactly on the flag. Water costs a stroke.',
+    'Beat par for a Birdie and three stars.',
+  ];
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function loadHole(i) {
+    hole = i;
+    const [tee, h, clubs, water] = HOLES[i];
+    H = { tee, h, clubs, water };
+    par = solve(tee, h, clubs, water) + 1;
+    ball = tee; strokes = 0; trail = [tee]; shot = null; phase = 'aim'; sunk = 0;
+    const w = 196, gap = 16, total = clubs.length * w + (clubs.length - 1) * gap;
+    buttons = clubs.map((c, j) => ({ x: 400 - total / 2 + j * (w + gap), y: 486, w, h: 78, label: label(c), sub: `${j + 1} · ${clubName(c)}`, size: 30, club: c }));
+    refreshButtons();
+    K.sfx.click();
+  }
+  function refreshButtons() {
+    for (const b of buttons) {
+      const n = apply(ball, b.club);
+      b.disabled = n === null || Math.abs(n) > 400;
+      b.color = n !== null && H.water.includes(n) ? '#4fa8ff' : '#7ee36b';
+      if (n === null) b.sub = 'not a whole number';
+    }
+  }
+
+  function swing(i) {
+    const b = buttons[i];
+    if (!b || b.disabled || phase !== 'aim') return;
+    const to = apply(ball, b.club);
+    strokes++;
+    shot = { from: ball, to, t: 0, dur: 0.85 };
+    phase = 'fly';
+    K.sfx.whoosh();
+  }
+
+  function land() {
+    const v = shot.to;
+    const x = xOf(v);
+    if (H.water.includes(v)) {
+      strokes++;
+      K.burst(x, LINE_Y, '#4fa8ff', 26, 260, 5);
+      K.float(x, LINE_Y - 60, 'Splash! +1', '#8fd0ff', 26);
+      K.sfx.boom(); K.shake(6);
+      phase = 'back'; shot = { from: v, to: ball, t: 0, dur: 0.6, back: true };
+      return;
+    }
+    ball = v; trail.push(v); shot = null;
+    if (v === H.h) return sink();
+    K.sfx.tick(); K.burst(x, LINE_Y, '#c8ffb8', 8, 120, 3);
+    if (strokes >= par + 4) {
+      phase = 'done';
+      K.state = 'over';
+      setTimeout(() => { K.sfx.lose(); K.overlay({ kicker: `Hole ${hole + 1}`, title: 'Out of strokes', sub: `Par was <b>${par}</b>. Try a different club order.`, buttons: [{ label: 'Try again', on: () => { K.state = 'play'; loadHole(hole); } }, { label: 'Holes', ghost: true, on: menu }] }); }, 500);
+      return;
+    }
+    phase = 'aim'; refreshButtons();
+  }
+
+  function sink() {
+    phase = 'done'; sunk = 0.001;
+    const d = strokes - par;
+    const name = strokes === 1 ? 'Hole in one!' : d <= -2 ? 'Eagle!' : d === -1 ? 'Birdie!' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : d === 2 ? 'Double bogey' : 'Sunk it';
+    const st = d < 0 ? 3 : d === 0 ? 2 : 1;
+    stars[hole] = Math.max(stars[hole] || 0, st);
+    K.save('stars', stars);
+    const x = xOf(H.h);
+    K.burst(x, LINE_Y - 20, '#ffd34d', 40, 340, 5); K.burst(x, LINE_Y - 20, '#7ee36b', 30, 260, 4);
+    K.float(x, LINE_Y - 110, name, '#ffd34d', 40);
+    K.sfx.win();
+    K.state = 'over';
+    setTimeout(() => {
+      const btns = [];
+      if (hole < HOLES.length - 1) btns.push({ label: 'Next hole', on: () => { K.state = 'play'; loadHole(hole + 1); } });
+      btns.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; loadHole(hole); } }, { label: 'Holes', ghost: true, on: menu });
+      K.overlay({ kicker: `Hole ${hole + 1} · Par ${par}`, title: name, sub: `${strokes} stroke${strokes > 1 ? 's' : ''}` + (st < 3 ? `. The best route takes <b>${par - 1}</b>.` : '. Perfect route!'),
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: btns });
+    }, 1100);
+  }
+
+  function update(dt) {
+    if (shot) {
+      shot.t += dt / shot.dur;
+      if (shot.t >= 1) {
+        if (shot.back) { shot = null; phase = 'aim'; refreshButtons(); K.sfx.tick(); }
+        else land();
+      }
+    }
+    if (sunk) sunk += dt;
+  }
+
+  const xOf = v => 60 + (v - view.a) / (view.b - view.a) * 680;
+
+  function targetView() {
+    const vals = [...trail, H.h, ball];
+    if (shot) vals.push(shot.to);
+    if (hoverClub >= 0 && buttons[hoverClub] && phase === 'aim') { const n = apply(ball, buttons[hoverClub].club); if (n !== null) vals.push(n); }
+    let a = Math.min(...vals), b = Math.max(...vals);
+    const pad = Math.max(2, (b - a) * 0.12);
+    return [a - pad, b + pad];
+  }
+
+  function arc(c, from, to, t0, t1, color, dash, width = 3) {
+    const x1 = xOf(from), x2 = xOf(to), hgt = 50 + Math.min(170, Math.abs(x2 - x1) * 0.45);
+    c.save();
+    c.setLineDash(dash || []);
+    c.strokeStyle = color; c.lineWidth = width; c.shadowColor = color; c.shadowBlur = 10;
+    c.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const t = t0 + (t1 - t0) * i / 40;
+      const x = x1 + (x2 - x1) * t, y = LINE_Y - 12 - Math.sin(Math.PI * t) * hgt;
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+    c.stroke();
+    c.restore();
+    return hgt;
+  }
+
+  function niceStep(span) {
+    for (const s of [1, 2, 5, 10, 20, 25, 50, 100]) if (span / s <= 14) return s;
+    return 200;
+  }
+
+  function draw(c, t) {
+    if (!H) {
+      // menu backdrop
+      view = { a: -2, b: 14 };
+      H = { tee: 2, h: 10, water: [6], clubs: [] }; ball = 2; trail = [2];
+      drawCourse(c, t); H = null;
+      return;
+    }
+    const [ta, tb] = targetView();
+    view.a += (ta - view.a) * 0.08; view.b += (tb - view.b) * 0.08;
+    drawCourse(c, t);
+
+    // previous shots
+    for (let i = 1; i < trail.length; i++) arc(c, trail[i - 1], trail[i], 0, 1, 'rgba(255,255,255,.18)', [4, 6], 2);
+    // preview
+    if (phase === 'aim' && hoverClub >= 0 && K.state === 'play') {
+      const n = apply(ball, buttons[hoverClub].club);
+      if (n !== null) {
+        const wet = H.water.includes(n);
+        arc(c, ball, n, 0, 1, wet ? '#ff5d73' : '#ffd34d', [10, 8], 2.5);
+        const x = xOf(n);
+        c.save(); c.strokeStyle = wet ? '#ff5d73' : '#ffd34d'; c.lineWidth = 2;
+        c.beginPath(); c.ellipse(x, LINE_Y, 14 + Math.sin(t * 6) * 2, 6, 0, 0, 7); c.stroke(); c.restore();
+        K.text(String(n), x, LINE_Y - 34, 18, wet ? '#ff5d73' : '#ffd34d', { weight: 800, glow: 10 });
+      }
+    }
+    // ball
+    let bx = xOf(ball), by = LINE_Y - 10, hgt = 0;
+    if (shot) {
+      const e = shot.back ? K.ease(Math.min(1, shot.t)) : Math.min(1, shot.t);
+      bx = xOf(shot.from) + (xOf(shot.to) - xOf(shot.from)) * e;
+      hgt = shot.back ? 0 : 50 + Math.min(170, Math.abs(xOf(shot.to) - xOf(shot.from)) * 0.45);
+      by = LINE_Y - 10 - Math.sin(Math.PI * Math.min(1, shot.t)) * hgt;
+      if (!shot.back) arc(c, shot.from, shot.to, Math.max(0, shot.t - 0.25), Math.min(1, shot.t), 'rgba(255,255,255,.7)', null, 3);
+    }
+    c.fillStyle = 'rgba(0,0,0,.35)';
+    c.beginPath(); c.ellipse(bx, LINE_Y + 2, 9 - hgt / 40, 3.5, 0, 0, 7); c.fill();
+    if (sunk) { by = LINE_Y - 10 + Math.min(1, sunk * 3) * 12; c.globalAlpha = Math.max(0, 1 - sunk * 3); }
+    K.orb(c, bx, by, 9, '#ffffff', { glow: 18 });
+    c.globalAlpha = 1;
+
+    // HUD
+    K.chip(22, 22, 'Hole', `${hole + 1} / ${HOLES.length}`, '#fff', { w: 112 });
+    K.chip(146, 22, 'Par', par, '#7ee36b', { w: 90 });
+    K.chip(248, 22, 'Strokes', strokes, strokes >= par ? '#ff9f43' : '#ffd34d', { w: 100 });
+    K.chip(360, 22, 'Ball', ball, '#ffffff', { w: 100 });
+    K.chip(472, 22, 'Flag', H.h, '#ff6bd6', { w: 100 });
+    K.button(restartBtn);
+    // strokes dots
+    for (let i = 0; i < par + 4; i++) {
+      c.fillStyle = i < strokes ? (i < par ? '#7ee36b' : '#ff9f43') : 'rgba(255,255,255,.12)';
+      c.beginPath(); c.arc(400 - (par + 3) * 9 + i * 18, 452, 5, 0, 7); c.fill();
+    }
+    buttons.forEach(b => K.button(b));
+  }
+
+  function drawCourse(c, t) {
+    const span = view.b - view.a;
+    // hills
+    c.fillStyle = 'rgba(46,230,197,.05)';
+    c.beginPath(); c.moveTo(0, LINE_Y + 40);
+    for (let x = 0; x <= 800; x += 20) c.lineTo(x, LINE_Y - 70 + Math.sin(x / 90 + 1) * 24 + Math.sin(x / 37) * 6);
+    c.lineTo(800, LINE_Y + 40); c.fill();
+    // fairway
+    const g = c.createLinearGradient(0, LINE_Y - 22, 0, LINE_Y + 40);
+    g.addColorStop(0, '#2fbf5b'); g.addColorStop(1, '#0f5a35');
+    c.save(); c.shadowColor = '#7ee36b'; c.shadowBlur = 24;
+    K.rr(c, 30, LINE_Y - 18, 740, 56, 28); c.fillStyle = g; c.fill(); c.restore();
+    // mowing stripes
+    c.save(); K.rr(c, 30, LINE_Y - 18, 740, 56, 28); c.clip();
+    for (let x = 0; x < 800; x += 40) { c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(x, LINE_Y - 20, 20, 60); }
+    // water
+    const unit = 680 / span;
+    for (const w of H.water) {
+      const x = xOf(w), rw = Math.max(16, unit * 0.48);
+      const wg = c.createLinearGradient(0, LINE_Y - 18, 0, LINE_Y + 38);
+      wg.addColorStop(0, '#62c4ff'); wg.addColorStop(1, '#1a4fb8');
+      c.fillStyle = wg; c.beginPath(); c.ellipse(x, LINE_Y + 8, rw, 24, 0, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 1.5;
+      for (let k = 0; k < 2; k++) { c.beginPath(); c.ellipse(x + Math.sin(t * 2 + k) * 4, LINE_Y + 2 + k * 10, rw * 0.5, 3, 0, 0, Math.PI); c.stroke(); }
+    }
+    c.restore();
+    // ticks
+    const step = niceStep(span);
+    const first = Math.ceil(view.a / step) * step;
+    for (let v = first; v <= view.b; v += step) {
+      const x = xOf(v);
+      if (x < 34 || x > 766) continue;
+      c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(x - 1, LINE_Y + 18, 2, 10);
+      K.text(String(v), x, LINE_Y + 46, 13, 'rgba(230,240,255,.75)', { weight: 600 });
+    }
+    // tee
+    const tx = xOf(H.tee);
+    c.fillStyle = '#ffd34d'; c.fillRect(tx - 6, LINE_Y + 6, 12, 4);
+    K.text('TEE ' + H.tee, tx, LINE_Y + 72, 11, '#ffd34d', { weight: 700 });
+    // flag
+    const fx = xOf(H.h);
+    c.fillStyle = '#05140d'; c.beginPath(); c.ellipse(fx, LINE_Y, 13, 5, 0, 0, 7); c.fill();
+    c.fillStyle = '#e8ecf8'; c.fillRect(fx - 1.5, LINE_Y - 92, 3, 92);
+    c.save(); c.shadowColor = '#ff6bd6'; c.shadowBlur = 16; c.fillStyle = '#ff6bd6';
+    c.beginPath(); c.moveTo(fx + 1.5, LINE_Y - 92);
+    for (let i = 0; i <= 10; i++) c.lineTo(fx + 1.5 + i * 4.6, LINE_Y - 92 + i * 1.2 + Math.sin(t * 5 - i * 0.6) * 3 * i / 10);
+    for (let i = 10; i >= 0; i--) c.lineTo(fx + 1.5 + i * 4.6, LINE_Y - 64 - i * 1.2 + Math.sin(t * 5 - i * 0.6) * 3 * i / 10);
+    c.fill(); c.restore();
+    K.text(String(H.h), fx + 24, LINE_Y - 78, 15, '#fff', { weight: 800 });
+  }
+})();
+</script>
+</body>
+</html>

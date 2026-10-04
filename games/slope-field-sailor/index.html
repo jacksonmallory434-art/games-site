@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slope Field Sailor</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // g(x, y) is the current's slope dy/dx. s is one starting height that works; the harbor is built around it.
+  const LEVELS = [
+    { g: () => 0.5, txt: 'dy/dx = 0.5', s: -2.5, rocks: [] },
+    { g: x => x / 5 - 1, txt: 'dy/dx = x/5 − 1', s: 1, rocks: [[5, 1.2, 0.7]] },
+    { g: (x, y) => -y / 3, txt: 'dy/dx = −y/3', s: 3.8, rocks: [[3, -0.4, 0.7], [7, 1.6, 0.6]] },
+    { g: (x, y) => y / 5, txt: 'dy/dx = y/5', s: 0.5, rocks: [[6, -0.2, 0.7], [3, 2.4, 0.6]] },
+    { g: x => 1.5 * Math.sin(x), txt: 'dy/dx = 1.5 sin x', s: -1.5, rocks: [[3.14, -0.3, 0.6], [6.3, 0.2, 0.6]] },
+    { g: (x, y) => (4 - x - y) / 2, txt: 'dy/dx = (4 − x − y)/2', s: -3, rocks: [[2, -2, 0.6], [6, 1.6, 0.5]] },
+    { g: (x, y) => y * (3 - y) / 3, txt: 'dy/dx = y(3 − y)/3', s: 0.3, rocks: [[5, 0.4, 0.6], [2.5, 3.2, 0.6]] },
+    { g: (x, y) => Math.sin(x) - y / 3, txt: 'dy/dx = sin x − y/3', s: -3, rocks: [[4.5, 1.2, 0.6], [8, -2.4, 0.6]] },
+  ];
+  const FX0 = 92, FX1 = 712, XU = 62, CY = 300, YU = 50, YMAX = 4.4, HW = 0.55;
+  const sx = x => FX0 + x * XU, sy = y => CY - y * YU;
+  let lv = 0, L, y0, boat, trail, oldTrails, tries, phase, harbor, particles, saved, dragging;
+  const sailBtn = { x: 600, y: 534, w: 140, h: 48, label: 'Set sail ⛵', size: 17, color: '#2ee6c5' };
+  const retryBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'slope-field-sailor', title: 'Slope Field Sailor', accent: '#2ee6c5', accent2: '#4fd1ff', bg: ['#061a26', '#0a1430'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(retryBtn, x, y)) return menu();
+      if (phase !== 'aim') return;
+      if (K.hit(sailBtn, x, y)) return sail();
+      if (x < FX0 + 70 && y > 60 && y < 540) { dragging = true; setY(y); }
+    },
+    move(x, y) { if (dragging) setY(y); },
+    up() { dragging = false; },
+    key(k) {
+      if (K.state !== 'play' || phase !== 'aim') return;
+      if (k === 'ArrowUp') { y0 = Math.min(YMAX - 0.2, Math.round((y0 + 0.1) * 10) / 10); K.sfx.tick(); }
+      if (k === 'ArrowDown') { y0 = Math.max(-YMAX + 0.2, Math.round((y0 - 0.1) * 10) / 10); K.sfx.tick(); }
+      if (k === ' ' || k === 'Enter') sail();
+    },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Slope Field Sailor',
+      sub: 'Ocean currents follow a differential equation. Pick where to launch and let the current carry you home.',
+      how: ['Every little line shows the current\'s slope <b>dy/dx</b> at that spot.', 'Drag your boat up or down the dock (or use ↑ ↓), then set sail.', 'Your boat follows the <b>solution curve</b>. Reach the harbor and dodge the rocks!'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function rk4(x, y, h, g) {
+    const k1 = g(x, y), k2 = g(x + h / 2, y + h / 2 * k1), k3 = g(x + h / 2, y + h / 2 * k2), k4 = g(x + h, y + h * k3);
+    return y + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4);
+  }
+  function endY(start, g) { let y = start; for (let x = 0; x < 10 - 1e-9; x += 0.01) y = rk4(x, y, 0.01, g); return y; }
+
+  function load(i) {
+    lv = i; L = LEVELS[i];
+    const e = endY(L.s, L.g);
+    harbor = [e - HW, e + HW];
+    y0 = L.s > 0 ? -1.5 : 1.5; tries = 0; trail = []; oldTrails = []; phase = 'aim';
+    particles = Array.from({ length: 70 }, () => ({ x: Math.random() * 10, y: K.rand(-YMAX, YMAX), life: Math.random() * 3 }));
+  }
+  window.solveLevel = () => { y0 = L.s; sail(); };
+  function setY(py) { const v = Math.round(K.clamp((CY - py) / YU, -YMAX + 0.2, YMAX - 0.2) * 10) / 10; if (v !== y0) K.sfx.tick(); y0 = v; }
+
+  function sail() {
+    if (phase !== 'aim') return;
+    tries++;
+    boat = { x: 0, y: y0 };
+    trail = [[0, y0]];
+    phase = 'sail';
+    K.sfx.whoosh();
+  }
+
+  function crash(msg) {
+    phase = 'aim';
+    K.burst(sx(boat.x), sy(boat.y), '#ff5d73', 28, 280); K.shake(10); K.sfx.boom();
+    K.float(sx(boat.x), sy(boat.y) - 30, msg, '#ff5d73', 22);
+    oldTrails.push(trail); if (oldTrails.length > 3) oldTrails.shift();
+    trail = [];
+  }
+
+  function update(dt) {
+    // drifting current particles
+    for (const p of particles) {
+      p.life -= dt;
+      const s = L.g(p.x, p.y), n = Math.hypot(1, s);
+      p.x += 1.4 * dt / n; p.y += 1.4 * dt * s / n;
+      if (p.life <= 0 || p.x > 10 || Math.abs(p.y) > YMAX) { p.x = Math.random() * 10; p.y = K.rand(-YMAX, YMAX); p.life = K.rand(1.5, 3); }
+    }
+    if (phase !== 'sail') return;
+    // move a fixed distance along the curve each frame so steep parts don't zoom
+    let budget = 2.6 * dt;
+    while (budget > 0 && phase === 'sail') {
+      const s = L.g(boat.x, boat.y), hx = Math.min(0.01, budget / Math.hypot(1, s));
+      boat.y = rk4(boat.x, boat.y, hx, L.g); boat.x += hx;
+      budget -= hx * Math.hypot(1, s);
+      if (Math.abs(boat.y) > YMAX) return crash('Swept off the map!');
+      for (const [rx, ry, rr] of L.rocks) if (Math.hypot(boat.x - rx, boat.y - ry) < rr) return crash('Rocks!');
+      if (boat.x >= 10) {
+        if (boat.y >= harbor[0] && boat.y <= harbor[1]) return win();
+        return crash('Missed the harbor');
+      }
+    }
+    trail.push([boat.x, boat.y]);
+  }
+
+  function win() {
+    phase = 'done'; K.state = 'over';
+    const st = tries === 1 ? 3 : tries === 2 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    K.burst(sx(10), sy(boat.y), '#ffd34d', 40, 340, 5); K.burst(sx(10), sy(boat.y), '#2ee6c5', 30, 260);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next voyage', on: () => { K.state = 'play'; load(lv + 1); } });
+      btns.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Voyage ${lv + 1}`, title: st === 3 ? 'First try!' : 'Safe harbor!', sub: `Launched from y = ${y0} on try ${tries}.`,
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: btns });
+    }, 900);
+  }
+
+  function drawBoat(c, x, y, slope, t) {
+    c.save(); c.translate(x, y); c.rotate(-Math.atan(slope * YU / XU));
+    c.fillStyle = '#f4f6ff'; c.beginPath(); c.moveTo(0, -30); c.lineTo(13, -6); c.lineTo(0, -6); c.closePath(); c.fill();
+    c.fillStyle = '#ffd34d'; c.beginPath(); c.moveTo(-2, -26); c.lineTo(-12, -6); c.lineTo(-2, -6); c.closePath(); c.fill();
+    c.fillStyle = '#c47a3c'; c.beginPath(); c.moveTo(-16, -6); c.lineTo(16, -6); c.lineTo(10, 4); c.lineTo(-10, 4); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  function draw(c, t) {
+    const demo = !L;
+    if (demo) { L = LEVELS[4]; harbor = [endY(L.s, L.g) - HW, endY(L.s, L.g) + HW]; particles = particles || []; }
+    // sea
+    K.panel(c, FX0 - 8, sy(YMAX) - 8, 10 * XU + 16, YMAX * 2 * YU + 16, { r: 16, fill: 'rgba(10,60,90,.35)', glow: 24, glowColor: 'rgba(46,230,197,.25)' });
+    // axes
+    c.fillStyle = 'rgba(255,255,255,.18)'; c.fillRect(FX0, CY, 10 * XU, 1);
+    for (let x = 0; x <= 10; x += 2) K.text(String(x), sx(x), sy(-YMAX) + 18, 10, 'rgba(255,255,255,.4)');
+    for (let y = -4; y <= 4; y += 2) K.text(String(y).replace('-', '−'), FX0 - 30, sy(y), 10, 'rgba(255,255,255,.4)');
+    // slope field
+    for (let x = 0.25; x < 10; x += 0.5) for (let y = -4; y <= 4.01; y += 0.5) {
+      const s = L.g(x, y), a = Math.atan(s * YU / XU), len = 9;
+      const m = Math.min(1, Math.abs(s) / 2);
+      c.strokeStyle = `rgba(${Math.round(120 + 135 * m)},${Math.round(220 - 60 * m)},255,.45)`;
+      c.lineWidth = 2; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(sx(x) - Math.cos(a) * len, sy(y) + Math.sin(a) * len); c.lineTo(sx(x) + Math.cos(a) * len, sy(y) - Math.sin(a) * len); c.stroke();
+    }
+    // current particles
+    for (const p of particles || []) { c.fillStyle = 'rgba(190,250,255,.5)'; c.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2.5, 2.5); }
+    // harbor
+    const hy1 = sy(harbor[1]), hy2 = sy(harbor[0]);
+    c.save(); c.shadowColor = '#ffd34d'; c.shadowBlur = 20; c.fillStyle = 'rgba(255,211,77,.25)'; c.fillRect(sx(10) - 6, hy1, 26, hy2 - hy1); c.restore();
+    c.fillStyle = '#ffd34d'; c.fillRect(sx(10) + 14, hy1 - 4, 6, hy2 - hy1 + 8);
+    K.text('⚓', sx(10) + 40, (hy1 + hy2) / 2, 20, '#ffd34d', { glow: 10 });
+    // rocks
+    for (const [rx, ry, rr] of L.rocks) {
+      const g = c.createRadialGradient(sx(rx) - 6, sy(ry) - 6, 2, sx(rx), sy(ry), rr * YU);
+      g.addColorStop(0, '#9aa3bb'); g.addColorStop(1, '#2a2f45');
+      c.fillStyle = g; c.beginPath(); c.ellipse(sx(rx), sy(ry), rr * XU * 0.95, rr * YU, 0, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 2; c.beginPath(); c.ellipse(sx(rx), sy(ry), rr * XU + 4 + Math.sin(t * 2) * 2, rr * YU + 4, 0, 0, 7); c.stroke();
+    }
+    if (demo) {
+      const pts = []; let y = L.s;
+      for (let x = 0; x <= 10; x += 0.05) { pts.push([sx(x), sy(y)]); y = rk4(x, y, 0.05, L.g); }
+      K.glowLine(c, pts, '#ffd34d', 3, 14);
+      L = null;
+      return;
+    }
+    // old attempts
+    for (const tr of oldTrails) { c.save(); c.setLineDash([5, 7]); c.strokeStyle = 'rgba(255,93,115,.45)'; c.lineWidth = 2; c.beginPath(); tr.forEach(([x, y], i) => (i ? c.lineTo(sx(x), sy(y)) : c.moveTo(sx(x), sy(y)))); c.stroke(); c.restore(); }
+    // wake
+    if (trail.length > 1) K.glowLine(c, trail.map(([x, y]) => [sx(x), sy(y)]), '#ffffff', 3, 12);
+    // dock
+    c.fillStyle = '#6a4a2a'; c.fillRect(FX0 - 30, sy(YMAX), 12, YMAX * 2 * YU);
+    if (phase === 'aim') {
+      drawBoat(c, sx(0), sy(y0), L.g(0, y0), t);
+      K.text(`y₀ = ${String(y0).replace('-', '−')}`, sx(0) + 56, sy(y0) - 14, 13, '#2ee6c5', { weight: 800, align: 'left' });
+      K.text('⇅ drag', sx(0) - 24, sy(y0) + 22, 10, 'rgba(220,228,250,.6)');
+    } else if (boat) drawBoat(c, sx(boat.x), sy(boat.y), L.g(boat.x, boat.y), t);
+
+    // HUD
+    K.chip(22, 14, 'Voyage', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 100, h: 44, size: 17 });
+    K.chip(132, 14, 'Tries', tries, '#4fd1ff', { w: 70, h: 44, size: 17 });
+    K.panel(c, 230, 12, 340, 46, { r: 14, glow: 16, glowColor: 'rgba(46,230,197,.3)' });
+    K.text(L.txt, 400, 36, 22, '#fff', { weight: 800 });
+    K.button(retryBtn);
+    sailBtn.disabled = phase !== 'aim';
+    K.button(sailBtn);
+    K.text('Read the little current lines: they show which way the water pushes at every point.', 320, 558, 12, 'rgba(220,228,250,.6)');
+  }
+})();
+</script>
+</body>
+</html>

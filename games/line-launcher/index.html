@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line Launcher</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Each level: stars [x,y], walls [x1,y1,x2,y2], lines needed
+  const LEVELS = [
+    { stars: [[0, 1], [2, 3], [-2, -1]], walls: [], need: 1 },
+    { stars: [[0, -2], [1, 0], [3, 4]], walls: [], need: 1 },
+    { stars: [[0, 3], [2, 2], [4, 1], [-2, 4]], walls: [], need: 1 },
+    { stars: [[-3, -4], [0, -3], [3, -2], [6, -1]], walls: [], need: 1 },
+    { stars: [[-2, 4], [1, 1], [4, -2], [0, -3], [2, 1]], walls: [], need: 2 },
+    { stars: [[-4, -2], [0, 0], [4, 2]], walls: [[2, -5, 2, 0.5], [-6, 1, -6, 5]], need: 1 },
+    { stars: [[-5, -2], [0, -2], [5, -2], [-3, 4], [3, 4]], walls: [[0, 0, 0, 2.5]], need: 2 },
+    { stars: [[0, 4], [1, 1], [2, -2], [3, -5]], walls: [[-3, -5, -3, 3]], need: 1 },
+    { stars: [[-3, -1], [0, 1], [3, 3], [6, 5]], walls: [[-6, -5, -6, -4], [1, -5, 1, 0]], need: 1 },
+    { stars: [[-3, -3], [3, 3], [0, 4], [4, 0], [2, 2]], walls: [[-5, 1, -5, 5]], need: 2 },
+    { stars: [[-4, 2], [0, -1], [4, -4]], walls: [[-2, 1.5, -2, 5], [2, -5, 2, -3]], need: 1 },
+    { stars: [[-6, 2], [6, 2], [-2, 4], [2, -4], [-2, -5], [4, -2]], walls: [[-4, -1, -4, 1]], need: 3 },
+  ];
+  const U = 40, OX = 400, OY = 270, XMIN = -8, XMAX = 8, YMIN = -5, YMAX = 5;
+  const sx = x => OX + x * U, sy = y => OY - y * U;
+  let lv = 0, L, stars, rise, run, b, shots, beam, prog, phase;
+  let starsSaved = [];
+
+  const ctrl = [];
+  function group(x, label, get, dec, inc) {
+    ctrl.push({ x, y: 518, w: 42, h: 42, label: '−', size: 26, color: '#39405a', textColor: '#e6eaf8', act: dec, group: label });
+    ctrl.push({ x: x + 116, y: 518, w: 42, h: 42, label: '+', size: 26, color: '#39405a', textColor: '#e6eaf8', act: inc, group: label });
+    ctrl.push({ display: true, x, label, get });
+  }
+  group(30, 'RISE', () => rise, () => { rise = Math.max(-6, rise - 1); }, () => { rise = Math.min(6, rise + 1); });
+  group(200, 'RUN', () => run, () => { run = Math.max(1, run - 1); }, () => { run = Math.min(4, run + 1); });
+  group(370, 'Y-INTERCEPT b', () => b, () => { b = Math.max(-5, b - 1); }, () => { b = Math.min(5, b + 1); });
+  const fireBtn = { x: 556, y: 512, w: 160, h: 56, label: 'FIRE', size: 24, color: '#ff6bd6' };
+  const retryBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Retry', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'line-launcher', title: 'Line Launcher', accent: '#ff6bd6', accent2: '#ffd34d', bg: ['#140a24', '#08142a'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(retryBtn, x, y)) return load(lv);
+      if (phase !== 'aim') return;
+      for (const c of ctrl) if (!c.display && K.hit(c, x, y)) { c.act(); K.sfx.tick(); }
+      if (K.hit(fireBtn, x, y)) fire();
+    },
+    key(k) {
+      if (K.state !== 'play' || phase !== 'aim') return;
+      const m = { ArrowUp: () => { b = Math.min(5, b + 1); }, ArrowDown: () => { b = Math.max(-5, b - 1); }, ArrowRight: () => { rise = Math.min(6, rise + 1); }, ArrowLeft: () => { rise = Math.max(-6, rise - 1); } }[k];
+      if (m) { m(); K.sfx.tick(); }
+      if (k === 'r' || k === 'R') run = run % 4 + 1;
+      if (k === ' ' || k === 'Enter') fire();
+    },
+  });
+
+  starsSaved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = starsSaved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Line Launcher',
+      sub: 'Aim a laser with y = mx + b. Pass through every star in as few shots as you can.',
+      how: ['Set the slope with <b>rise</b> and <b>run</b>, and where it crosses the y-axis with <b>b</b>.', 'The laser stops at walls, so plan around them.', 'Use the fewest lines for three stars.'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, starsSaved.filter(Boolean).length), stars: starsSaved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function load(i) {
+    lv = i; L = LEVELS[i];
+    stars = L.stars.map(([x, y]) => ({ x, y, got: false, pop: 0 }));
+    rise = 1; run = 1; b = 0; shots = 0; beam = []; prog = 0; phase = 'aim';
+  }
+
+  function slopeText() {
+    if (rise === 0) return '';
+    const g = K.gcd(rise, run), n = rise / g, d = run / g;
+    const sign = n < 0 ? '−' : '';
+    const a = Math.abs(n);
+    return sign + (d === 1 ? (a === 1 ? '' : a) : `${a}/${d}`) + 'x';
+  }
+  function eqText() {
+    const s = slopeText();
+    if (!s) return `y = ${String(b).replace('-', '−')}`;
+    return `y = ${s}` + (b ? (b > 0 ? ` + ${b}` : ` − ${-b}`) : '');
+  }
+
+  // where the beam ends: first wall hit going left to right
+  function beamEnd(m, c) {
+    let end = XMAX;
+    for (const [x1, y1, x2, y2] of L.walls) {
+      // walls are vertical or horizontal segments
+      if (x1 === x2) {
+        const y = m * x1 + c;
+        if (y >= Math.min(y1, y2) && y <= Math.max(y1, y2) && x1 < end) end = x1;
+      } else if (m !== 0) {
+        const x = (y1 - c) / m;
+        if (x >= Math.min(x1, x2) && x <= Math.max(x1, x2) && x < end) end = x;
+      }
+    }
+    return end;
+  }
+
+  function fire() {
+    if (phase !== 'aim') return;
+    const m = rise / run;
+    shots++;
+    beam.push({ m, c: b, end: beamEnd(m, b), p: 0 });
+    phase = 'fire';
+    K.sfx.whoosh();
+  }
+
+  function update(dt) {
+    for (const s of stars) if (s.pop) s.pop = Math.max(0, s.pop - dt * 2);
+    if (phase !== 'fire') return;
+    const bm = beam[beam.length - 1];
+    const prevX = XMIN + (bm.end - XMIN) * bm.p;
+    bm.p = Math.min(1, bm.p + dt * 1.1);
+    const x = XMIN + (bm.end - XMIN) * bm.p;
+    for (const s of stars) {
+      if (s.got || s.x < prevX - 0.001 || s.x > x) continue;
+      if (Math.abs(bm.m * s.x + bm.c - s.y) < 0.02) {
+        s.got = true; s.pop = 1;
+        K.burst(sx(s.x), sy(s.y), '#ffd34d', 22, 260);
+        K.sfx.note(660 + stars.filter(t => t.got).length * 110, 0.18);
+      }
+    }
+    if (bm.p >= 1) {
+      if (bm.end < XMAX) { K.burst(sx(bm.end), sy(bm.m * bm.end + bm.c), '#ff5d73', 14, 180); K.sfx.bad(); K.shake(4); }
+      if (stars.every(s => s.got)) return win();
+      if (shots >= L.need + 1) return fail();
+      phase = 'aim';
+    }
+  }
+
+  function win() {
+    phase = 'done'; K.state = 'over';
+    const st = shots <= L.need ? 3 : 2;
+    starsSaved[lv] = Math.max(starsSaved[lv] || 0, st); K.save('stars', starsSaved);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+      btns.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Level ${lv + 1}`, title: st === 3 ? 'Bullseye!' : 'All stars!', sub: `${shots} line${shots > 1 ? 's' : ''} used` + (st < 3 ? ` (it can be done in ${L.need}).` : '.'),
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: btns });
+    }, 700);
+  }
+  function fail() {
+    phase = 'done'; K.state = 'over';
+    setTimeout(() => {
+      K.sfx.lose();
+      K.overlay({ kicker: `Level ${lv + 1}`, title: 'Out of lasers', sub: `Look for ${L.need === 1 ? 'one line that lines up every star' : L.need + ' lines that cover every star between them'}.`,
+        buttons: [{ label: 'Try again', on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu }] });
+    }, 600);
+  }
+
+  function drawStar(c, x, y, r, col, rot) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) { const a = rot + i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    c.closePath(); c.fillStyle = col; c.fill();
+  }
+
+  function draw(c, t) {
+    // plot area
+    K.panel(c, sx(XMIN) - 6, sy(YMAX) - 6, (XMAX - XMIN) * U + 12, (YMAX - YMIN) * U + 12, { r: 14, fill: 'rgba(6,8,24,.6)' });
+    for (let x = XMIN; x <= XMAX; x++) { c.fillStyle = x === 0 ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.07)'; c.fillRect(sx(x) - (x === 0 ? 1 : 0.5), sy(YMAX), x === 0 ? 2 : 1, (YMAX - YMIN) * U); }
+    for (let y = YMIN; y <= YMAX; y++) { c.fillStyle = y === 0 ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.07)'; c.fillRect(sx(XMIN), sy(y) - (y === 0 ? 1 : 0.5), (XMAX - XMIN) * U, y === 0 ? 2 : 1); }
+    for (let x = XMIN + 2; x < XMAX; x += 2) if (x) K.text(String(x).replace('-', '−'), sx(x), sy(0) + 13, 10, 'rgba(255,255,255,.45)');
+    for (let y = YMIN + 1; y < YMAX; y++) if (y) K.text(String(y).replace('-', '−'), sx(0) - 12, sy(y), 10, 'rgba(255,255,255,.45)');
+    if (!L) {
+      K.glowLine(c, [[sx(-8), sy(-8 * 0.5 + 1)], [sx(8), sy(8 * 0.5 + 1)]], '#ff6bd6', 4, 20);
+      [[-4, -1], [0, 1], [4, 3]].forEach(([x, y], i) => drawStar(c, sx(x), sy(y), 14, '#ffd34d', t + i));
+      return;
+    }
+    // walls
+    for (const [x1, y1, x2, y2] of L.walls) {
+      c.save(); c.lineCap = 'round'; c.strokeStyle = '#ff5d73'; c.shadowColor = '#ff5d73'; c.shadowBlur = 16; c.lineWidth = 8;
+      c.beginPath(); c.moveTo(sx(x1), sy(y1)); c.lineTo(sx(x2), sy(y2)); c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 2; c.stroke(); c.restore();
+    }
+    // fired beams (kept inside the graph)
+    c.save(); c.beginPath(); c.rect(sx(XMIN), sy(YMAX), (XMAX - XMIN) * U, (YMAX - YMIN) * U); c.clip();
+    beam.forEach((bm, i) => {
+      const x2 = XMIN + (bm.end - XMIN) * bm.p;
+      const live = i === beam.length - 1 && phase === 'fire';
+      c.globalAlpha = live ? 1 : 0.35;
+      K.glowLine(c, [[sx(XMIN), sy(bm.m * XMIN + bm.c)], [sx(x2), sy(bm.m * x2 + bm.c)]], '#ff6bd6', live ? 5 : 3, live ? 24 : 8);
+      c.globalAlpha = 1;
+      if (live) K.orb(c, sx(x2), sy(bm.m * x2 + bm.c), 7, '#fff', { glow: 24 });
+    });
+    c.restore();
+    // aim preview: intercept + slope triangle
+    if (phase === 'aim') {
+      const m = rise / run, x0 = sx(0), y0 = sy(b);
+      c.save(); c.setLineDash([6, 6]); c.strokeStyle = 'rgba(255,211,77,.8)'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x0 + run * U, y0); c.lineTo(x0 + run * U, y0 - rise * U); c.stroke();
+      c.strokeStyle = 'rgba(255,107,214,.9)';
+      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x0 + run * U, y0 - rise * U); c.stroke();
+      c.restore();
+      if (rise) K.text(`rise ${rise}`.replace('-', '−'), x0 + run * U + 8, y0 - rise * U / 2, 11, '#ffd34d', { align: 'left' });
+      K.text(`run ${run}`, x0 + run * U / 2, y0 + (rise >= 0 ? 12 : -12), 11, '#ffd34d');
+      K.orb(c, x0, y0, 7 + Math.sin(t * 6) * 1.5, '#ff6bd6', { glow: 18 });
+    }
+    // stars
+    stars.forEach((s, i) => {
+      const r = 13 + s.pop * 8;
+      c.save(); c.shadowColor = '#ffd34d'; c.shadowBlur = s.got ? 26 : 10;
+      drawStar(c, sx(s.x), sy(s.y), r, s.got ? '#ffd34d' : 'rgba(255,211,77,.35)', Math.sin(t + i) * 0.2);
+      c.restore();
+      if (!s.got) { c.strokeStyle = '#ffd34d'; c.lineWidth = 1.5; c.stroke(); }
+    });
+
+    // HUD
+    K.chip(22, 14, 'Level', `${lv + 1}`, '#fff', { w: 80, h: 44, size: 18 });
+    K.chip(110, 14, 'Lasers', `${L.need + 1 - shots} left`, '#ff6bd6', { w: 110, h: 44, size: 17 });
+    K.panel(c, 240, 12, 320, 48, { r: 14, glow: 16, glowColor: 'rgba(255,107,214,.3)' });
+    K.text(eqText(), 400, 37, 24, '#fff', { weight: 800 });
+    K.button(retryBtn);
+
+    // controls
+    for (const g of ctrl) {
+      if (g.display) {
+        K.text(g.label, g.x + 79, 506, 10, 'rgba(220,228,250,.6)');
+        K.panel(c, g.x + 46, 518, 66, 42, { r: 10 });
+        K.text(String(g.get()).replace('-', '−'), g.x + 79, 540, 22, '#fff', { weight: 800 });
+      } else K.button(Object.assign(g, { disabled: phase !== 'aim' }));
+    }
+    fireBtn.disabled = phase !== 'aim';
+    K.button(fireBtn);
+  }
+})();
+</script>
+</body>
+</html>

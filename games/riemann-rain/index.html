@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riemann Rain</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const X0 = 80, X1 = 720, XU = 80, BASE = 500, YU = 66, CURVES = 6;
+  const STRIPS = [4, 5, 6, 8, 8, 10];
+  const PAINT = ['#4fd1ff', '#2ee6c5', '#7ee36b', '#ffd34d', '#ff9f43', '#ff6bd6', '#a66bff', '#6b8cff'];
+  let curve, f, fname, n, strip, level, rects, rising, speed, results, drops, phase, phaseT, exact;
+
+  const K = window.K = MA.game({
+    slug: 'riemann-rain', title: 'Riemann Rain', accent: '#4fd1ff', accent2: '#a66bff', bg: ['#0a1030', '#120a26'],
+    tagline: 'Paint rain fills the area under a curve, one rectangle at a time. Stop each one at just the right height.',
+    how: [
+      'Paint pours into one strip at a time and rises. Tap (or press Space) to stop it.',
+      'Paint above the curve is <b>spill</b>. Empty space under the curve is a <b>gap</b>. Keep both small!',
+      'Your rectangles add up to a <b>Riemann sum</b>, an estimate of the area under the curve.',
+      'Six curves, more strips each time. The pour speeds up!',
+    ],
+    start, update, draw,
+    down() { if (K.state === 'play') stop(); },
+    key(k) { if (K.state === 'play' && (k === ' ' || k === 'Enter' || k === 'ArrowDown')) stop(); },
+  });
+
+  const CURVE_MAKERS = [
+    () => { const a = K.rand(0.8, 1.4), p = K.rand(0, 6); return [x => 2.6 + a * Math.sin(0.8 * x + p), 'wave']; },
+    () => { const c = K.rand(0.06, 0.09); return [x => 0.8 + c * x * x, 'x² curve']; },
+    () => { const h = K.rand(3, 5); return [x => 4.6 - 0.18 * (x - h) * (x - h), 'hill']; },
+    () => { return [x => 1 + 3.5 * Math.exp(-0.35 * x), 'decay']; },
+    () => { const p = K.rand(0, 6); return [x => 2.5 + Math.sin(1.3 * x + p) + 0.6 * Math.sin(0.5 * x), 'bumpy']; },
+    () => { return [x => 0.8 + 0.6 * Math.sqrt(x) + 0.9 * Math.sin(x) ** 2, 'mystery']; },
+  ];
+
+  function start() { level = 0; results = []; nextCurve(); }
+  function nextCurve() {
+    level++;
+    if (level > CURVES) {
+      const score = results.reduce((a, r) => a + r.pts, 0);
+      return K.gameOver(score, { msg: results.map((r, i) => `Curve ${i + 1}: ${r.acc}% accurate with ${r.n} strips`).join('<br>') });
+    }
+    [f, fname] = CURVE_MAKERS[(level - 1) % CURVE_MAKERS.length]();
+    n = STRIPS[level - 1];
+    rects = []; strip = 0; drops = [];
+    speed = 1.5 + level * 0.35;
+    exact = integrate(0, 8);
+    rising = 0; phase = 'pour';
+  }
+  function integrate(a, b, g = f, steps = 400) {
+    let s = 0; const h = (b - a) / steps;
+    for (let i = 0; i < steps; i++) s += g(a + (i + 0.5) * h) * h;
+    return s;
+  }
+  const w = () => 8 / n;
+
+  function stop() {
+    if (phase !== 'pour') return;
+    const a = strip * w(), b = a + w(), h = rising;
+    const spill = integrate(a, b, x => Math.max(0, h - f(x)), 60);
+    const gap = integrate(a, b, x => Math.max(0, f(x) - h), 60);
+    const area = integrate(a, b, f, 60);
+    rects.push({ h, spill, gap });
+    const err = (spill + gap) / area;
+    const word = err < 0.08 ? 'Perfect!' : err < 0.18 ? 'Nice' : err < 0.35 ? 'OK' : 'Messy';
+    const cx = X0 + (a + w() / 2) * XU;
+    K.float(cx, BASE - h * YU - 26, word, err < 0.08 ? '#ffd34d' : err < 0.18 ? '#7ee36b' : err < 0.35 ? '#4fd1ff' : '#ff5d73', 18);
+    if (err < 0.08) K.burst(cx, BASE - h * YU, '#ffd34d', 14, 180);
+    K.sfx.note(err < 0.18 ? 880 : 440, 0.12);
+    strip++; rising = 0;
+    if (strip >= n) finishCurve();
+  }
+
+  function finishCurve() {
+    const sum = rects.reduce((s, r) => s + r.h * w(), 0);
+    const mess = rects.reduce((s, r) => s + r.spill + r.gap, 0);
+    const acc = Math.max(0, Math.round((1 - mess / exact) * 100));
+    const pts = acc * level;
+    results.push({ acc, n, pts });
+    phase = 'done'; phaseT = 2.8;
+    K.float(400, 180, `${acc}% accurate · +${pts}`, acc >= 85 ? '#7ee36b' : '#ffd34d', 30);
+    K.float(400, 220, `Your sum ${sum.toFixed(2)} · real area ${exact.toFixed(2)}`, '#fff', 18);
+    acc >= 80 ? K.sfx.win() : K.sfx.lose();
+  }
+
+  function update(dt) {
+    if (phase === 'pour') {
+      rising += speed * dt * 0.75;
+      if (Math.random() < 0.9) drops.push({ x: X0 + (strip * w() + Math.random() * w()) * XU, y: 116, vy: K.rand(200, 320) });
+      if (rising > 6.2) { K.shake(6); K.sfx.bad(); stop(); }
+    }
+    if (phase === 'done') { phaseT -= dt; if (phaseT <= 0) nextCurve(); }
+    for (const d of drops) { d.vy += 900 * dt; d.y += d.vy * dt; }
+    const lvl = BASE - rising * YU;
+    drops = drops.filter(d => d.y < (phase === 'pour' ? lvl : BASE) && d.y < 620);
+  }
+
+  function draw(c, t) {
+    if (!f) {
+      f = x => 2.6 + Math.sin(0.8 * x + 1); n = 6; rects = [1, 2, 3, 4].map(i => ({ h: f((i - 0.5) * 8 / 6) })); strip = 4; rising = 1 + (t % 3); phase = 'menu';
+      drawGraph(c, t); f = null;
+      return;
+    }
+    drawGraph(c, t);
+    K.chip(22, 14, 'Curve', `${level} / ${CURVES}`, '#fff', { w: 100, h: 50 });
+    K.chip(132, 14, 'Strips', n, '#4fd1ff', { w: 80, h: 50 });
+    K.chip(222, 14, 'Score', results.reduce((a, r) => a + r.pts, 0), '#ffd34d', { w: 110, h: 50 });
+    const spill = rects.reduce((s, r) => s + r.spill, 0), gap = rects.reduce((s, r) => s + r.gap, 0);
+    K.chip(442, 14, 'Gap', gap.toFixed(2), '#9fb2ff', { w: 90, h: 50 });
+    K.chip(342, 14, 'Spill', spill.toFixed(2), '#ff5d73', { w: 90, h: 50 });
+  }
+
+  function drawGraph(c, t) {
+    // axes
+    c.fillStyle = 'rgba(255,255,255,.4)'; c.fillRect(X0, BASE, X1 - X0, 2); c.fillRect(X0 - 1, 100, 2, BASE - 100);
+    for (let x = 0; x <= 8; x++) K.text(String(x), X0 + x * XU, BASE + 16, 11, 'rgba(255,255,255,.5)');
+    for (let y = 1; y <= 5; y++) K.text(String(y), X0 - 14, BASE - y * YU, 11, 'rgba(255,255,255,.5)');
+    // cloud over the current strip
+    if (phase === 'pour' || phase === 'menu') {
+      const cx = X0 + (strip + 0.5) * (8 / n) * XU;
+      c.save(); c.shadowColor = '#a66bff'; c.shadowBlur = 20; c.fillStyle = '#d9d3ff';
+      for (const [ox, oy, r] of [[-24, 0, 18], [0, -10, 24], [24, 0, 18], [0, 6, 18]]) { c.beginPath(); c.arc(cx + ox, 102 + oy, r, 0, 7); c.fill(); }
+      c.restore();
+    }
+    // rectangles
+    const ww = 8 / n;
+    rects.forEach((r, i) => {
+      const x = X0 + i * ww * XU, top = BASE - r.h * YU, col = PAINT[i % PAINT.length];
+      const g = c.createLinearGradient(0, top, 0, BASE); g.addColorStop(0, K.alpha(col, 0.85)); g.addColorStop(1, K.alpha(col, 0.35));
+      c.fillStyle = g; c.fillRect(x + 1, top, ww * XU - 2, BASE - top);
+      c.fillStyle = 'rgba(255,255,255,.5)'; c.fillRect(x + 1, top, ww * XU - 2, 2);
+      // spill (paint above the curve) and gap (empty space under it)
+      for (let px = x + 1; px < x + ww * XU - 1; px += 2) {
+        const fy = BASE - f((px - X0) / XU) * YU;
+        if (fy > top) { c.fillStyle = 'rgba(255,93,115,.55)'; c.fillRect(px, top, 2, fy - top); }
+        else { c.fillStyle = 'rgba(159,178,255,.18)'; c.fillRect(px, fy, 2, top - fy); }
+      }
+    });
+    // rising paint
+    if ((phase === 'pour' || phase === 'menu') && strip < n) {
+      const x = X0 + strip * ww * XU, top = BASE - rising * YU, col = PAINT[strip % PAINT.length];
+      c.save(); c.shadowColor = col; c.shadowBlur = 20;
+      c.fillStyle = K.alpha(col, 0.75);
+      c.beginPath(); c.moveTo(x + 1, BASE);
+      for (let px = x + 1; px <= x + ww * XU - 1; px += 4) c.lineTo(px, top + Math.sin(px / 8 + t * 10) * 2);
+      c.lineTo(x + ww * XU - 1, BASE); c.closePath(); c.fill(); c.restore();
+      c.strokeStyle = 'rgba(255,255,255,.25)'; c.setLineDash([4, 6]); c.strokeRect(x + 0.5, 100, ww * XU - 1, BASE - 100); c.setLineDash([]);
+    }
+    for (const d of drops || []) { c.fillStyle = K.alpha(PAINT[strip % PAINT.length], 0.9); c.fillRect(d.x, d.y, 2, 9); }
+    // the curve
+    const pts = [];
+    for (let px = X0; px <= X1; px += 4) pts.push([px, BASE - f((px - X0) / XU) * YU]);
+    K.glowLine(c, pts, '#ffffff', 3, 18);
+  }
+})();
+</script>
+</body>
+</html>

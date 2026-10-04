@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mean Machine</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const BX0 = 110, BX1 = 690, BY = 360, UNIT = (BX1 - BX0) / 10, CLAW_Y = 120;
+  const BALL = ['#ff5d73', '#ff9f43', '#ffd34d', '#7ee36b', '#2ee6c5', '#4fd1ff', '#6b8cff', '#a66bff', '#ff6bd6', '#ff7d9d', '#9ff07a'];
+  let round, lives, score, M, balls, left, claw, dir, speed, falling, ang, angV, phase, phaseT, fulX;
+
+  const K = window.K = MA.game({
+    slug: 'mean-machine', title: 'Mean Machine', accent: '#2ee6c5', accent2: '#ffd34d', bg: ['#071a1f', '#14102c'],
+    tagline: 'The beam balances when the mean of its balls sits right on the pivot. Drop balls to make it balance!',
+    how: [
+      'The claw slides back and forth. Tap (or press Space) to drop a ball on the number under it.',
+      'All balls weigh the same, so the beam balances when their <b>mean</b> equals the pivot\'s number.',
+      'Use every drop in a round. If the mean isn\'t exact at the end, the beam tips and you lose a life.',
+      'Tip: mean × count = the sum you need.',
+    ],
+    start, update, draw,
+    down() { if (K.state === 'play') drop(); },
+    key(k) { if (K.state === 'play' && (k === ' ' || k === 'ArrowDown' || k === 'Enter')) drop(); },
+  });
+
+  function start() { round = 0; lives = 3; score = 0; ang = 0; angV = 0; nextRound(); }
+
+  function nextRound() {
+    round++;
+    const D = round < 3 ? 1 : round < 7 ? 2 : 3;
+    for (let tries = 0; tries < 500; tries++) {
+      const n = K.ri(2, round < 5 ? 3 : 5);
+      const vals = Array.from({ length: n }, () => K.ri(0, 10));
+      const half = round >= 9 && Math.random() < 0.5;
+      const total = n + D;
+      let m = half ? K.ri(2, 8) + 0.5 : K.ri(2, 8);
+      const need = m * total - vals.reduce((a, b) => a + b, 0);
+      if (!Number.isInteger(need) || need < 0 || need > 10 * D) continue;
+      if (D === 1 && vals.reduce((a, b) => a + b, 0) / n === m) continue;
+      M = m;
+      balls = vals.map((v, i) => ({ v, off: 0, color: BALL[v] }));
+      left = D;
+      break;
+    }
+    claw = K.rand(0, 10); dir = 1; speed = 2.4 + round * 0.22;
+    falling = null; phase = 'aim'; fulX = BX0 + M * UNIT;
+    K.float(400, 230, `Round ${round}: balance at ${M}`, '#2ee6c5', 30);
+  }
+
+  const mean = () => balls.reduce((a, b) => a + b.v, 0) / balls.length;
+  const torque = () => balls.reduce((a, b) => a + (b.v - M), 0);
+
+  function drop() {
+    if (phase !== 'aim' || falling) return;
+    const v = Math.round(claw);
+    falling = { v, x: BX0 + v * UNIT, y: CLAW_Y + 30, vy: 0, color: BALL[v] };
+    left--;
+    K.sfx.whoosh();
+  }
+
+  function land(v) {
+    balls.push({ v, color: BALL[v], squash: 1 });
+    angV += (v - M) * 0.02;
+    K.sfx.note(300 + v * 50, 0.12);
+    const sum = balls.reduce((a, b) => a + b.v, 0);
+    if (left === 0) {
+      if (Math.abs(mean() - M) < 1e-9) win();
+      else lose(`Mean is ${fmt(mean())}, not ${M}`);
+      return;
+    }
+    // can it still be fixed?
+    const need = M * (balls.length + left) - sum;
+    if (need < 0 || need > 10 * left) lose(need < 0 ? 'Too heavy on the right, no way back!' : 'Too heavy on the left, no way back!');
+  }
+  const fmt = v => (Math.round(v * 100) / 100).toString();
+
+  function win() {
+    phase = 'win'; phaseT = 1.6;
+    const pts = 100 + round * 20;
+    score += pts;
+    K.float(400, 250, `Balanced! +${pts}`, '#7ee36b', 36);
+    K.burst(fulX, BY, '#2ee6c5', 40, 340, 5); K.burst(fulX, BY, '#ffd34d', 24, 260);
+    K.sfx.win();
+  }
+  function lose(msg) {
+    phase = 'tip'; phaseT = 2;
+    lives--;
+    K.float(400, 250, msg, '#ff5d73', 26);
+    K.shake(10); K.sfx.boom();
+  }
+
+  function update(dt) {
+    // beam angle springs toward a tilt set by the torque
+    const target = phase === 'tip' ? Math.sign(torque() || 1) * 0.3 : K.clamp(torque() * 0.025, -0.35, 0.35);
+    angV += (target - ang) * 40 * dt; angV *= Math.pow(0.02, dt); ang += angV * dt;
+    for (const b of balls) if (b.squash) b.squash = Math.max(0, b.squash - dt * 4);
+    if (phase === 'aim') {
+      claw += dir * speed * dt;
+      if (claw > 10) { claw = 10; dir = -1; } if (claw < 0) { claw = 0; dir = 1; }
+    }
+    if (falling) {
+      falling.vy += 1500 * dt; falling.y += falling.vy * dt;
+      const [, by] = beamPoint(falling.v);
+      if (falling.y >= by - 18) { const v = falling.v; falling = null; land(v); }
+    }
+    if (phase === 'win' || phase === 'tip') {
+      phaseT -= dt;
+      if (phase === 'tip') for (const b of balls) b.off = (b.off || 0) + dt * 2;
+      if (phaseT <= 0) {
+        if (lives <= 0) { phase = 'over'; return K.gameOver(score, { msg: `You balanced <b>${round - 1}</b> beam${round === 2 ? '' : 's'}.` }); }
+        ang *= 0.2; nextRound();
+      }
+    }
+  }
+
+  // point on the tilted beam for a value, measured from the pivot
+  function beamPoint(v) {
+    const d = (v - M) * UNIT;
+    return [fulX + Math.cos(ang) * d, BY + Math.sin(ang) * d];
+  }
+
+  function draw(c, t) {
+    if (!balls) {
+      M = 5; fulX = BX0 + 5 * UNIT; ang = Math.sin(t) * 0.12; balls = [{ v: 2, color: BALL[2] }, { v: 7, color: BALL[7] }, { v: 8, color: BALL[8] }];
+      drawBeam(c, t); balls = null;
+      return;
+    }
+    // claw rail
+    c.fillStyle = 'rgba(255,255,255,.08)'; K.rr(c, BX0 - 20, CLAW_Y - 46, BX1 - BX0 + 40, 8, 4); c.fill();
+    const cx = BX0 + claw * UNIT;
+    if (phase === 'aim') {
+      const v = Math.round(claw), sx = BX0 + v * UNIT;
+      c.save(); c.setLineDash([5, 7]); c.strokeStyle = K.alpha(BALL[v], 0.6); c.lineWidth = 2;
+      c.beginPath(); c.moveTo(sx, CLAW_Y + 40); c.lineTo(sx, BY - 30); c.stroke(); c.restore();
+    }
+    // claw
+    c.fillStyle = '#9fb2c8'; c.fillRect(cx - 2, CLAW_Y - 42, 4, 26);
+    K.tile(c, cx - 24, CLAW_Y - 20, 48, 18, '#2ee6c5', { r: 6, depth: 3, glow: 14 });
+    c.strokeStyle = '#9fb2c8'; c.lineWidth = 4; c.lineCap = 'round';
+    const open = phase === 'aim' ? 0 : 6;
+    c.beginPath(); c.moveTo(cx - 14, CLAW_Y); c.lineTo(cx - 20 - open, CLAW_Y + 22); c.moveTo(cx + 14, CLAW_Y); c.lineTo(cx + 20 + open, CLAW_Y + 22); c.stroke();
+    if (phase === 'aim' && !falling) {
+      const v = Math.round(claw);
+      K.orb(c, cx, CLAW_Y + 22, 17, BALL[v], { glow: 16 });
+      K.text(String(v), cx, CLAW_Y + 23, 15, '#0b0e1c', { weight: 800 });
+    }
+    if (falling) { K.orb(c, falling.x, falling.y, 17, falling.color, { glow: 16 }); K.text(String(falling.v), falling.x, falling.y + 1, 15, '#0b0e1c', { weight: 800 }); }
+    drawBeam(c, t);
+
+    // HUD
+    const sum = balls.reduce((a, b) => a + b.v, 0);
+    K.chip(22, 14, 'Score', score, '#ffd34d', { w: 110, h: 50 });
+    K.chip(142, 14, 'Round', round, '#fff', { w: 80, h: 50 });
+    for (let i = 0; i < 3; i++) K.text('♥', 690 + i * 30, 38, 24, i < lives ? '#ff5d73' : 'rgba(255,255,255,.15)', { glow: i < lives ? 12 : 0 });
+    K.panel(c, 160, 488, 480, 92, { r: 16 });
+    K.text('BALANCE AT', 240, 510, 10, 'rgba(220,228,250,.6)');
+    K.text(String(M), 240, 544, 34, '#2ee6c5', { weight: 800, glow: 14 });
+    K.text('MEAN NOW', 400, 510, 10, 'rgba(220,228,250,.6)');
+    const mn = mean();
+    K.text(fmt(mn), 400, 538, 26, Math.abs(mn - M) < 1e-9 ? '#7ee36b' : '#fff', { weight: 800 });
+    K.text(`sum ${sum} ÷ ${balls.length} balls`, 400, 565, 11, 'rgba(220,228,250,.6)');
+    K.text('DROPS LEFT', 560, 510, 10, 'rgba(220,228,250,.6)');
+    for (let i = 0; i < left; i++) K.orb(c, 560 + (i - (left - 1) / 2) * 26, 542, 10, '#fff', { glow: 10 });
+    if (!left && phase === 'aim') K.text('—', 560, 542, 20, '#fff');
+  }
+
+  function drawBeam(c, t) {
+    // fulcrum
+    c.save(); c.shadowColor = '#2ee6c5'; c.shadowBlur = 20;
+    const g = c.createLinearGradient(0, BY, 0, BY + 70); g.addColorStop(0, '#2ee6c5'); g.addColorStop(1, '#0d4f4a');
+    c.fillStyle = g; c.beginPath(); c.moveTo(fulX, BY + 6); c.lineTo(fulX + 36, BY + 70); c.lineTo(fulX - 36, BY + 70); c.closePath(); c.fill(); c.restore();
+    K.text(String(M), fulX, BY + 52, 16, '#03211e', { weight: 800 });
+    // beam
+    c.save(); c.translate(fulX, BY); c.rotate(ang);
+    const x0 = (0 - M) * UNIT - 16, x1 = (10 - M) * UNIT + 16;
+    K.tile(c, x0, -8, x1 - x0, 16, '#8fa4c8', { r: 8, depth: 4, glow: 8 });
+    for (let v = 0; v <= 10; v++) {
+      const x = (v - M) * UNIT;
+      c.fillStyle = 'rgba(20,28,50,.6)'; c.fillRect(x - 1, -5, 2, 10);
+      K.text(String(v), x, 22, 12, 'rgba(230,236,255,.75)', { weight: 700, c });
+    }
+    c.restore();
+    // balls stacked by value
+    const stack = {};
+    for (const b of balls) {
+      const k = stack[b.v] = (stack[b.v] || 0) + 1;
+      const [px, py] = beamPoint(b.v);
+      const roll = (b.off || 0) * Math.sign(ang) * 120;
+      const x = px + roll, y = py - 18 - (k - 1) * 32 + (b.off || 0) * (b.off || 0) * 200;
+      const sq = b.squash || 0;
+      c.save(); c.translate(x, y); c.scale(1 + sq * 0.15, 1 - sq * 0.15);
+      K.orb(c, 0, 0, 16, b.color, { glow: 12 });
+      K.text(String(b.v), 0, 1, 14, '#0b0e1c', { weight: 800, c });
+      c.restore();
+    }
+  }
+})();
+</script>
+</body>
+</html>

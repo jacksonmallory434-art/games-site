@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mirror Maze</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // A level is built from its solution: the laser starts at s and follows legs [direction°, length].
+  // A mirror sits at every bend; mid targets sit partway along legs; the last leg ends at a target.
+  const LEVELS = [
+    { s: [100, 430], legs: [[0, 290], [90, 270]], mid: [], decoys: [], walls: [] },
+    { s: [90, 140], legs: [[0, 250], [-90, 260], [0, 330]], mid: [[1, 0.5]], decoys: [], walls: [[560, 120, 560, 330]] },
+    { s: [90, 470], legs: [[30, 260], [-30, 260], [30, 200]], mid: [[0, 0.55]], decoys: [[600, 200, 120]], walls: [[420, 200, 600, 200]] },
+    { s: [400, 480], legs: [[90, 250], [180, 250], [60, 160]], mid: [[1, 0.5]], decoys: [[600, 300, 0]], walls: [[400, 140, 400, 120], [520, 230, 700, 230]] },
+    { s: [80, 300], legs: [[0, 200], [60, 180], [-60, 180], [0, 180]], mid: [[1, 0.5], [2, 0.5]], decoys: [[460, 140, 30]], walls: [[280, 380, 640, 380]] },
+    { s: [700, 480], legs: [[150, 300], [90, 200], [210, 250]], mid: [[0, 0.5]], decoys: [[640, 200, 60], [250, 420, 0]], walls: [[560, 120, 560, 280]] },
+    { s: [80, 100], legs: [[0, 600], [-90, 380], [180, 500], [90, 200]], mid: [[0, 0.5], [1, 0.5], [2, 0.5]], decoys: [[430, 290, 45]], walls: [[300, 200, 560, 200], [300, 380, 560, 380]] },
+    { s: [100, 500], legs: [[60, 230], [0, 200], [-60, 230], [30, 200], [120, 250]], mid: [[1, 0.5], [3, 0.5]], decoys: [[260, 160, 90], [640, 200, 30]], walls: [[470, 140, 470, 250]] },
+  ];
+  const STEP = 15, MLEN = 64;
+  const rad = d => d * Math.PI / 180;
+  const vec = d => [Math.cos(rad(d)), -Math.sin(rad(d))];
+
+  function build(def, idx) {
+    let [x, y] = def.s, dir = def.legs[0][0];
+    const mirrors = [], targets = [], path = [[x, y]];
+    def.legs.forEach(([d, len], i) => {
+      const [vx, vy] = vec(d);
+      for (const [li, f] of def.mid) if (li === i) targets.push({ x: x + vx * len * f, y: y + vy * len * f, lit: 0 });
+      x += vx * len; y += vy * len;
+      path.push([x, y]);
+      if (i < def.legs.length - 1) {
+        const out = def.legs[i + 1][0];
+        const sol = (((d + out) / 2) % 180 + 180) % 180;
+        const offs = [45, -30, 60, 90, -45, 30, 75, -60];
+        mirrors.push({ x, y, sol, a: ((sol + offs[(i + idx) % offs.length]) % 180 + 180) % 180 });
+      } else targets.push({ x, y, lit: 0 });
+    });
+    def.decoys.forEach(([dx, dy, a]) => mirrors.push({ x: dx, y: dy, sol: null, a }));
+    const par = mirrors.reduce((s, m) => {
+      if (m.sol == null) return s;
+      const k = ((m.sol - m.a) / STEP % 12 + 12) % 12;
+      return s + Math.min(k, 12 - k);
+    }, 0);
+    return { start: def.s, dir: def.legs[0][0], mirrors, targets, walls: def.walls, par };
+  }
+
+  let lv = 0, L, sel, moves, beam, won, saved;
+  const rotL = { x: 260, y: 532, w: 120, h: 50, label: '↺ 15°', size: 20, color: '#4fd1ff' };
+  const rotR = { x: 420, y: 532, w: 120, h: 50, label: '↻ 15°', size: 20, color: '#4fd1ff' };
+  const retryBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Retry', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'mirror-maze', title: 'Mirror Maze', accent: '#4fd1ff', accent2: '#ff6bd6', bg: ['#071526', '#160a26'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(retryBtn, x, y)) return load(lv);
+      if (K.hit(rotL, x, y)) return rotate(1);
+      if (K.hit(rotR, x, y)) return rotate(-1);
+      const m = L.mirrors.findIndex(m => Math.hypot(m.x - x, m.y - y) < MLEN / 2 + 6);
+      if (m < 0) return;
+      if (sel === m) rotate(-1); else { sel = m; K.sfx.tick(); }
+    },
+    key(k) {
+      if (K.state !== 'play') return;
+      if (k === 'ArrowLeft') rotate(1);
+      if (k === 'ArrowRight') rotate(-1);
+      if (k === 'ArrowUp' || k === 'Tab') { sel = (sel + 1) % L.mirrors.length; K.sfx.tick(); }
+      if (k === 'ArrowDown') { sel = (sel - 1 + L.mirrors.length) % L.mirrors.length; K.sfx.tick(); }
+    },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Mirror Maze',
+      sub: 'Turn the mirrors to bounce the laser into every crystal.',
+      how: ['Tap a mirror to select it. Tap it again or use the ↺ ↻ buttons to turn it 15°.', 'Light bounces off at the <b>same angle</b> it comes in.', 'Light every crystal at once, using as few turns as you can.'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function load(i) { lv = i; L = build(LEVELS[i], i); sel = 0; moves = 0; won = false; trace(); }
+  window.solveLevel = () => { L.mirrors.forEach(m => { if (m.sol != null) m.a = m.sol; }); trace(); };
+
+  function rotate(s) {
+    if (won || sel == null) return;
+    const m = L.mirrors[sel];
+    m.a = ((m.a + s * STEP) % 180 + 180) % 180;
+    moves++;
+    K.sfx.note(520 + m.a * 2, 0.06);
+    trace();
+  }
+
+  function segHit(px, py, dx, dy, ax, ay, bx, by) {
+    const ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((ax - px) * ey - (ay - py) * ex) / den;
+    const u = ((ax - px) * dy - (ay - py) * dx) / den;
+    return t > 1e-6 && u >= 0 && u <= 1 ? t : null;
+  }
+  const ends = m => { const [vx, vy] = vec(m.a); return [m.x - vx * MLEN / 2, m.y - vy * MLEN / 2, m.x + vx * MLEN / 2, m.y + vy * MLEN / 2]; };
+
+  function trace() {
+    let [px, py] = L.start, [dx, dy] = vec(L.dir), last = -1;
+    const pts = [[px, py]], hits = [];
+    L.targets.forEach(t => t.on = false);
+    for (let bounce = 0; bounce < 24; bounce++) {
+      let best = Infinity, kind = 'edge', idx = -1;
+      // play-area edges
+      for (const [ax, ay, bx, by] of [[0, 0, 800, 0], [800, 0, 800, 600], [800, 600, 0, 600], [0, 600, 0, 0]]) { const t = segHit(px, py, dx, dy, ax, ay, bx, by); if (t != null && t < best) best = t; }
+      L.walls.forEach(w => { const t = segHit(px, py, dx, dy, ...w); if (t != null && t < best) { best = t; kind = 'wall'; } });
+      L.mirrors.forEach((m, i) => { if (i === last) return; const t = segHit(px, py, dx, dy, ...ends(m)); if (t != null && t < best) { best = t; kind = 'mirror'; idx = i; } });
+      // targets along this stretch
+      for (const tg of L.targets) {
+        const t = (tg.x - px) * dx + (tg.y - py) * dy;
+        if (t < 0 || t > best) continue;
+        if (Math.hypot(px + dx * t - tg.x, py + dy * t - tg.y) < 15) tg.on = true;
+      }
+      px += dx * best; py += dy * best;
+      pts.push([px, py]);
+      if (kind !== 'mirror') { hits.push({ kind, x: px, y: py }); break; }
+      const m = L.mirrors[idx];
+      const inDeg = Math.atan2(-dy, dx) * 180 / Math.PI;
+      const outDeg = 2 * m.a - inDeg;
+      [dx, dy] = vec(outDeg);
+      hits.push({ kind: 'mirror', idx, x: px, y: py, inDeg, outDeg });
+      last = idx;
+    }
+    beam = { pts, hits };
+    if (!won && K.state === 'play' && L.targets.every(t => t.on)) win();
+  }
+
+  function win() {
+    won = true; K.state = 'over';
+    const st = moves <= L.par ? 3 : moves <= L.par + 4 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    L.targets.forEach(t => K.burst(t.x, t.y, '#ff6bd6', 24, 260));
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+      btns.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Level ${lv + 1}`, title: st === 3 ? 'Brilliant!' : 'All lit!', sub: `${moves} turn${moves === 1 ? '' : 's'}` + (st < 3 ? `. It can be done in ${L.par}.` : '. That\'s the fewest possible!'),
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: btns });
+    }, 1000);
+  }
+
+  function update(dt) {
+    for (const t of L.targets) t.lit += ((t.on ? 1 : 0) - t.lit) * Math.min(1, dt * 8);
+  }
+
+  function drawMirror(c, m, i, t) {
+    const [x1, y1, x2, y2] = ends(m);
+    c.save();
+    c.lineCap = 'round';
+    if (i === sel) {
+      c.fillStyle = 'rgba(79,209,255,.12)'; c.strokeStyle = 'rgba(79,209,255,.6)'; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(m.x, m.y, MLEN / 2 + 8, 0, 7); c.fill();
+      c.setLineDash([4, 6]); c.lineDashOffset = -t * 20; c.stroke(); c.setLineDash([]);
+    }
+    c.shadowColor = '#bfefff'; c.shadowBlur = 16;
+    c.strokeStyle = '#2a4a6a'; c.lineWidth = 11;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+    c.shadowBlur = 0;
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, '#9fdcff'); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, '#9fdcff');
+    c.strokeStyle = g; c.lineWidth = 5;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+    c.fillStyle = '#0b1530'; c.beginPath(); c.arc(m.x, m.y, 5, 0, 7); c.fill();
+    c.strokeStyle = '#9fdcff'; c.lineWidth = 2; c.stroke();
+    c.restore();
+  }
+
+  function drawCrystal(c, tg, t) {
+    const on = tg.lit, r = 15;
+    c.save();
+    c.translate(tg.x, tg.y); c.rotate(Math.sin(t * 1.5 + tg.x) * 0.15);
+    c.shadowColor = '#ff6bd6'; c.shadowBlur = 8 + on * 30;
+    c.beginPath(); c.moveTo(0, -r * 1.3); c.lineTo(r, 0); c.lineTo(0, r * 1.3); c.lineTo(-r, 0); c.closePath();
+    const g = c.createLinearGradient(-r, -r, r, r);
+    g.addColorStop(0, on > 0.5 ? '#ffe0f6' : '#5a3a6a'); g.addColorStop(1, on > 0.5 ? '#ff6bd6' : '#2a1a3a');
+    c.fillStyle = g; c.fill();
+    c.strokeStyle = on > 0.5 ? '#fff' : 'rgba(255,107,214,.6)'; c.lineWidth = 2; c.stroke();
+    c.restore();
+  }
+
+  function draw(c, t) {
+    if (!L) {
+      const demo = build(LEVELS[4], 0);
+      demo.mirrors.forEach(m => { if (m.sol != null) m.a = m.sol; });
+      L = demo; sel = -1; trace(); drawScene(c, t); L = null;
+      return;
+    }
+    drawScene(c, t);
+    // HUD
+    K.chip(22, 14, 'Level', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 100, h: 44, size: 17 });
+    K.chip(132, 14, 'Turns', moves, moves <= L.par ? '#7ee36b' : '#ff9f43', { w: 84, h: 44, size: 17 });
+    K.chip(226, 14, 'Par', L.par, '#4fd1ff', { w: 74, h: 44, size: 17 });
+    const lit = L.targets.filter(x => x.on).length;
+    K.chip(310, 14, 'Crystals', `${lit} / ${L.targets.length}`, '#ff6bd6', { w: 100, h: 44, size: 17 });
+    K.button(retryBtn);
+    if (sel != null && L.mirrors[sel]) {
+      K.button(rotL); K.button(rotR);
+      K.text(`mirror at ${L.mirrors[sel].a}°`, 400, 516, 13, '#9fdcff', { weight: 700 });
+    }
+  }
+
+  function drawScene(c, t) {
+    // walls
+    for (const [x1, y1, x2, y2] of L.walls) {
+      c.save(); c.lineCap = 'round';
+      c.strokeStyle = '#2b2f4a'; c.lineWidth = 14; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+      c.strokeStyle = '#4a5078'; c.lineWidth = 6; c.stroke();
+      c.restore();
+    }
+    // beam
+    c.save(); c.globalCompositeOperation = 'lighter';
+    K.glowLine(c, beam.pts, '#ff3d6e', 4, 22);
+    c.restore();
+    for (const h of beam.hits) if (h.kind !== 'mirror') K.orb(c, h.x, h.y, 5 + Math.random() * 2, '#ff9fb6', { glow: 18 });
+    // angle marks on the selected mirror
+    const h = beam.hits.find(hh => hh.kind === 'mirror' && hh.idx === sel);
+    if (h) {
+      const m = L.mirrors[sel];
+      // incoming ray reversed and outgoing ray, measured from the mirror surface
+      const back = h.inDeg + 180;
+      const surfA = [m.a, m.a + 180];
+      const nearest = (d) => surfA.reduce((best, s) => { const diff = Math.abs(((d - s + 540) % 360) - 180); return diff < best[0] ? [diff, s] : best; }, [999, 0]);
+      const [ai, si] = nearest(back), [ao, so] = nearest(h.outDeg);
+      c.save(); c.strokeStyle = '#ffd34d'; c.lineWidth = 2;
+      const arc = (from, to) => { const a1 = -rad(from), a2 = -rad(to); c.beginPath(); c.arc(h.x, h.y, 26, Math.min(a1, a2), Math.max(a1, a2)); c.stroke(); };
+      const fix = (s, d) => { let dd = d; while (dd - s > 180) dd -= 360; while (s - dd > 180) dd += 360; return dd; };
+      arc(si, fix(si, back)); arc(so, fix(so, h.outDeg));
+      c.restore();
+      const mid1 = rad((si + fix(si, back)) / 2), mid2 = rad((so + fix(so, h.outDeg)) / 2);
+      K.text(Math.round(ai) + '°', h.x + Math.cos(mid1) * 44, h.y - Math.sin(mid1) * 44, 12, '#ffd34d', { weight: 800 });
+      K.text(Math.round(ao) + '°', h.x + Math.cos(mid2) * 44, h.y - Math.sin(mid2) * 44, 12, '#ffd34d', { weight: 800 });
+    }
+    L.mirrors.forEach((m, i) => drawMirror(c, m, i, t));
+    L.targets.forEach(tg => drawCrystal(c, tg, t));
+    // emitter
+    const [ex, ey] = L.start, [vx, vy] = vec(L.dir);
+    c.save(); c.translate(ex, ey); c.rotate(Math.atan2(vy, vx));
+    K.tile(c, -26, -14, 34, 28, '#ff3d6e', { r: 8, glow: 18, depth: 3 });
+    c.fillStyle = '#ffd0dc'; c.fillRect(6, -5, 10, 10);
+    c.restore();
+  }
+})();
+</script>
+</body>
+</html>

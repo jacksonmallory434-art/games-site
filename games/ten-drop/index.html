@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ten Drop</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const COLS = 6, ROWS = 8, CELL = 58, BX = (800 - COLS * CELL) / 2, BY = 112, BH = ROWS * CELL;
+  const COLORS = ['', '#ff5d73', '#ff9f43', '#ffd34d', '#7ee36b', '#2ee6c5', '#4fd1ff', '#6b8cff', '#a66bff', '#ff6bd6'];
+  let cols, next, queue, score, combo, maxCombo, drops, riseEvery, riseLeft, phase, falling, hoverCol, waitT, cleared;
+
+  const K = window.K = MA.game({
+    slug: 'ten-drop', title: 'Ten Drop', accent: '#ffd34d', accent2: '#ff6bd6', bg: ['#1a0f33', '#0b1430'],
+    tagline: 'Drop number tiles. Line up tiles that add to exactly 10 to blow them up.',
+    how: [
+      'Tap a column (or use ← → and Space) to drop the next tile.',
+      'Any straight line of touching tiles, across or up-and-down, that adds to <b>10</b> pops.',
+      'Falling tiles can set off chain reactions for combo points.',
+      'Every few drops a new row pushes up from the bottom. Don\'t let a column overflow!',
+    ],
+    start, update, draw,
+    move(x) { hoverCol = colAt(x); },
+    down(x) { if (K.state !== 'play') return; hoverCol = colAt(x); drop(hoverCol); },
+    key(k) {
+      if (K.state !== 'play') return;
+      if (k === 'ArrowLeft') { hoverCol = Math.max(0, hoverCol - 1); K.sfx.tick(); }
+      if (k === 'ArrowRight') { hoverCol = Math.min(COLS - 1, hoverCol + 1); K.sfx.tick(); }
+      if (k === ' ' || k === 'ArrowDown' || k === 'Enter') drop(hoverCol);
+    },
+  });
+
+  const colAt = x => K.clamp(Math.floor((x - BX) / CELL), 0, COLS - 1);
+  const cx = c => BX + c * CELL;
+  const cy = r => BY + BH - (r + 1) * CELL;
+
+  function newValue() {
+    // Lean toward numbers that complete something on top of the board so the game flows.
+    const tops = cols.filter(c => c.length).map(c => c[c.length - 1].v);
+    if (tops.length && Math.random() < 0.45) return 10 - K.pick(tops);
+    return K.ri(1, 9);
+  }
+  function start() {
+    cols = Array.from({ length: COLS }, () => []);
+    do {
+      cols = Array.from({ length: COLS }, () => []);
+      for (let c = 0; c < COLS; c++) for (let r = 0; r < 2; r++) cols[c].push(tile(K.ri(1, 9), r));
+    } while (findRuns().size);
+    queue = [newValue(), newValue()];
+    next = newValue();
+    score = 0; combo = 0; maxCombo = 0; drops = 0; cleared = 0;
+    riseEvery = 7; riseLeft = riseEvery;
+    phase = 'aim'; falling = null; hoverCol = hoverCol ?? 2; waitT = 0;
+    resolveSoon();
+  }
+  const tile = (v, r) => ({ v, y: r, pop: 0, born: 0 });
+
+  function drop(c) {
+    if (phase !== 'aim') return;
+    if (cols[c].length >= ROWS) { K.sfx.bad(); K.shake(4); return; }
+    falling = { v: next, c, y: ROWS + 0.6, vy: 0 };
+    next = queue.shift(); queue.push(newValue());
+    phase = 'fall';
+    K.sfx.whoosh();
+  }
+
+  function findRuns() {
+    const marks = new Set();
+    const get = (c, r) => (cols[c] && cols[c][r]) || null;
+    const scan = (cells) => {
+      for (let i = 0; i < cells.length; i++) {
+        let s = 0;
+        for (let j = i; j < cells.length; j++) {
+          if (!cells[j]) break;
+          s += cells[j].v;
+          if (s > 10) break;
+          if (s === 10 && j > i) for (let k = i; k <= j; k++) marks.add(cells[k]);
+        }
+      }
+    };
+    for (let c = 0; c < COLS; c++) scan(cols[c]);
+    for (let r = 0; r < ROWS + 1; r++) scan(Array.from({ length: COLS }, (_, c) => get(c, r)));
+    return marks;
+  }
+
+  function resolveSoon() { phase = 'settle'; waitT = 0.12; }
+
+  function resolve() {
+    const marks = findRuns();
+    if (!marks.size) {
+      combo = 0;
+      if (riseLeft <= 0) return rise();
+      if (cols.some(c => c.length > ROWS)) return lose();
+      phase = 'aim';
+      return;
+    }
+    combo++;
+    maxCombo = Math.max(maxCombo, combo);
+    const pts = marks.size * 10 * combo;
+    score += pts;
+    cleared += marks.size;
+    let sx = 0, sy = 0;
+    for (const t of marks) {
+      t.pop = 0.001;
+      const c = cols.findIndex(col => col.includes(t));
+      const x = cx(c) + CELL / 2, y = cy(t.y) + CELL / 2;
+      sx += x; sy += y;
+      K.burst(x, y, COLORS[t.v], 14, 260);
+    }
+    sx /= marks.size; sy /= marks.size;
+    K.float(sx, sy, '+' + pts, '#fff', 30);
+    if (combo > 1) { K.float(sx, sy - 40, 'COMBO ×' + combo, '#ffd34d', 26 + combo * 3); K.shake(4 + combo * 2); }
+    K.sfx.note(440 * Math.pow(2, (combo - 1) * 4 / 12), 0.2);
+    K.sfx.pop();
+    phase = 'pop'; waitT = 0.28;
+  }
+
+  function rise() {
+    riseEvery = Math.max(4, 7 - Math.floor(drops / 25));
+    riseLeft = riseEvery;
+    for (let c = 0; c < COLS; c++) {
+      cols[c].forEach(t => t.y -= 0); // display y eases up automatically
+      cols[c].unshift(tile(K.ri(1, 9), -1));
+    }
+    K.sfx.boom(); K.shake(6);
+    if (cols.some(c => c.length > ROWS)) return lose();
+    resolveSoon();
+  }
+
+  function lose() {
+    phase = 'over';
+    K.flash('#ff5d73', 0.4); K.shake(12);
+    K.gameOver(score, { msg: `You cleared <b>${cleared}</b> tiles. Biggest combo: <b>×${maxCombo || 0}</b>.` });
+  }
+
+  function update(dt) {
+    // Ease tiles to their row.
+    let moving = false;
+    for (const col of cols) col.forEach((t, r) => {
+      if (Math.abs(t.y - r) > 0.01) { t.y += Math.sign(r - t.y) * Math.min(Math.abs(r - t.y), dt * 14); moving = true; } else t.y = r;
+      if (t.pop) t.pop += dt;
+      t.born = Math.min(1, t.born + dt * 4);
+    });
+    if (phase === 'fall') {
+      falling.vy += 60 * dt;
+      falling.y -= falling.vy * dt;
+      const land = cols[falling.c].length;
+      if (falling.y <= land) {
+        const t = tile(falling.v, land); t.born = 0.4;
+        cols[falling.c].push(t);
+        falling = null;
+        drops++; riseLeft--;
+        K.sfx.tick(); K.shake(2);
+        resolveSoon();
+      }
+    } else if (phase === 'pop') {
+      waitT -= dt;
+      if (waitT <= 0) { for (let c = 0; c < COLS; c++) cols[c] = cols[c].filter(t => !t.pop); resolveSoon(); }
+    } else if (phase === 'settle') {
+      waitT -= dt;
+      if (waitT <= 0 && !moving) resolve();
+    }
+  }
+
+  function drawTile(ctx, x, y, v, s = 1, a = 1) {
+    const w = (CELL - 6) * s;
+    const ox = x + 3 + (CELL - 6 - w) / 2, oy = y + 3 + (CELL - 6 - w) / 2;
+    K.tile(ctx, ox, oy, w, w, COLORS[v], { r: 11 * s, alpha: a, depth: 4 });
+    K.text(String(v), ox + w / 2, oy + w / 2 + 1, 28 * s, '#fff', { weight: 800, stroke: 4, strokeColor: 'rgba(0,0,0,.35)', c: ctx });
+  }
+
+  function draw(ctx, t) {
+    // well
+    K.panel(ctx, BX - 12, BY - 12, COLS * CELL + 24, BH + 24, { r: 20, fill: 'rgba(6,8,22,.72)', glow: 30, glowColor: 'rgba(255,211,77,.25)' });
+    if (!cols) return drawAttract(ctx, t);
+    // column highlight
+    if (K.state === 'play' && phase !== 'over') {
+      const g = ctx.createLinearGradient(0, BY, 0, BY + BH);
+      g.addColorStop(0, 'rgba(255,211,77,.0)'); g.addColorStop(1, 'rgba(255,211,77,.12)');
+      ctx.fillStyle = g; ctx.fillRect(cx(hoverCol), BY, CELL, BH);
+    }
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+      ctx.fillStyle = 'rgba(255,255,255,.05)';
+      ctx.beginPath(); ctx.arc(cx(c) + CELL / 2, cy(r) + CELL / 2, 2, 0, 7); ctx.fill();
+    }
+    // danger line
+    const danger = cols.some(c => c.length >= ROWS - 1);
+    ctx.strokeStyle = danger ? `rgba(255,93,115,${0.5 + 0.4 * Math.sin(t * 8)})` : 'rgba(255,93,115,.25)';
+    ctx.setLineDash([8, 8]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(BX - 6, BY); ctx.lineTo(BX + COLS * CELL + 6, BY); ctx.stroke();
+    ctx.setLineDash([]);
+    // tiles
+    ctx.save();
+    ctx.beginPath(); ctx.rect(BX - 12, BY - 70, COLS * CELL + 24, BH + 82); ctx.clip();
+    for (let c = 0; c < COLS; c++) for (const tl of cols[c]) {
+      let s = K.back(Math.min(1, 0.4 + tl.born * 0.6)), a = 1;
+      if (tl.pop) { s = 1 + tl.pop * 2.2; a = Math.max(0, 1 - tl.pop / 0.28); }
+      if (tl.pop) { ctx.save(); ctx.shadowColor = '#fff'; ctx.shadowBlur = 30; }
+      drawTile(ctx, cx(c), cy(tl.y), tl.v, s, a);
+      if (tl.pop) ctx.restore();
+    }
+    // ghost + falling
+    if (phase === 'aim' && K.state === 'play') {
+      const land = cols[hoverCol].length;
+      if (land < ROWS) {
+        ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = COLORS[next]; ctx.lineWidth = 2; ctx.globalAlpha = 0.7;
+        K.rr(ctx, cx(hoverCol) + 4, cy(land) + 4, CELL - 8, CELL - 8, 10); ctx.stroke(); ctx.restore();
+      }
+      const bob = Math.sin(t * 5) * 3;
+      drawTile(ctx, cx(hoverCol), BY - CELL - 4 + bob, next);
+    }
+    if (falling) drawTile(ctx, cx(falling.c), cy(falling.y), falling.v);
+    ctx.restore();
+
+    // side panels
+    K.chip(40, BY, 'Score', score, '#ffd34d', { w: 150, h: 64, size: 28 });
+    K.chip(40, BY + 80, 'Cleared', cleared, '#7ee36b', { w: 150, h: 56 });
+    K.chip(40, BY + 152, 'Best', Math.max(K.best(), score), '#ff6bd6', { w: 150, h: 56 });
+    // queue
+    const qx = 800 - 40 - 150;
+    K.panel(ctx, qx, BY, 150, 180, { r: 14 });
+    K.text('UP NEXT', qx + 75, BY + 18, 10, 'rgba(210,218,245,.65)');
+    queue.forEach((v, i) => drawTile(ctx, qx + 75 - CELL / 2 + (i ? 0 : 0), BY + 34 + i * 68, v, i ? 0.8 : 1, i ? 0.6 : 1));
+    // rise meter
+    K.panel(ctx, qx, BY + 196, 150, 90, { r: 14 });
+    K.text('NEW ROW IN', qx + 75, BY + 214, 10, 'rgba(210,218,245,.65)');
+    for (let i = 0; i < riseEvery; i++) {
+      const on = i < riseLeft;
+      const px = qx + 75 + (i - (riseEvery - 1) / 2) * 18;
+      ctx.fillStyle = on ? (riseLeft <= 1 ? '#ff5d73' : '#4fd1ff') : 'rgba(255,255,255,.1)';
+      if (on) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 10; }
+      K.rr(ctx, px - 6, BY + 236, 12, 26, 4); ctx.fill(); ctx.shadowBlur = 0;
+    }
+    K.text(riseLeft + (riseLeft === 1 ? ' drop' : ' drops'), qx + 75, BY + 274, 12, riseLeft <= 1 ? '#ff5d73' : '#cfd6ee');
+    if (riseLeft <= 1) {
+      ctx.fillStyle = `rgba(255,93,115,${0.12 + 0.08 * Math.sin(t * 10)})`;
+      ctx.fillRect(BX, BY + BH - 8, COLS * CELL, 8);
+    }
+  }
+
+  // Menu background: a few tiles bobbing in the well.
+  function drawAttract(ctx, t) {
+    const demo = [[0, 0, 3], [0, 1, 7], [1, 0, 6], [2, 0, 4], [3, 0, 9], [3, 1, 1], [4, 0, 2], [5, 0, 8], [5, 1, 5], [4, 1, 5]];
+    for (const [c, r, v] of demo) drawTile(ctx, cx(c), cy(r) + Math.sin(t * 2 + c) * 2, v);
+  }
+})();
+</script>
+</body>
+</html>

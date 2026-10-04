@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fence It</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // # = part of one answer, S = sheep (must be inside), R = rock. Targets come from the answer.
+  const MAPS = [
+    ['............', '............', '...##.......', '...#S.......', '...##.......', '............', '............', '............'],
+    ['............', '..R.........', '....###.....', '....#S#..R..', '....###.....', '.R..........', '........R...', '............'],
+    ['............', '............', '............', '..S######S..', '............', '..R.....R...', '............', '............'],
+    ['............', '...R....R...', '...####.....', '...#S##.....', '...####..R..', '............', '....R.......', '............'],
+    ['............', '............', '.R..........', '..#####..R..', '..S###S.....', '.......R....', '............', '............'],
+    ['............', '..S.R.......', '..#.R.......', '..###.R.....', '....#..R....', '....##S.....', '............', '............'],
+    ['............', '............', '......#S....', '.....###....', '.....###.R..', '.....R......', '............', '............'],
+    ['............', '.R......R...', '..S###......', '..####...R..', '..####......', '..###S......', '.R..........', '............'],
+    ['............', '.......#....', '.S######....', '.######S....', '............', '...R....R...', '............', '............'],
+    ['.S#R........', '..#R..#S....', '..#R..#.....', '..###.#R....', '...R###.....', '............', '............', '............'],
+  ];
+  const C = 12, R = 8, CELL = 50, GX = (800 - C * CELL) / 2, GY = 96;
+
+  let lv = 0, cells, sheep, rocks, A, P, paint, solved, saved;
+  const clearBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Clear', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'fence-it', title: 'Fence It', accent: '#7ee36b', accent2: '#ffd34d', bg: ['#0b1a12', '#0b1426'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(clearBtn, x, y)) { cells.fill(0); K.sfx.whoosh(); return; }
+      const i = cellAt(x, y);
+      if (i < 0) return;
+      paint = cells[i] ? 0 : 1;
+      set(i);
+    },
+    move(x, y) { if (K.state === 'play' && K.ptr.down && paint != null) { const i = cellAt(x, y); if (i >= 0) set(i); } },
+    up() { paint = null; check(); },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Fence It',
+      sub: 'Build a sheep pen with exactly the right area and exactly the right amount of fence.',
+      how: ['Drag across the field to paint the pen. Drag from inside the pen to erase.', '<b>Area</b> = squares inside. <b>Fence</b> = edges around the outside (the perimeter).', 'Every sheep must be inside, rocks can\'t be, and the pen must be one piece.'],
+      html: `<p class="ma-best">${saved.filter(Boolean).length} / ${MAPS.length} pens built</p>`,
+      levels: { n: MAPS.length, unlocked: Math.min(MAPS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  const idx = (c, r) => r * C + c;
+  function cellAt(x, y) {
+    const c = Math.floor((x - GX) / CELL), r = Math.floor((y - GY) / CELL);
+    return c < 0 || c >= C || r < 0 || r >= R ? -1 : idx(c, r);
+  }
+  function perim(arr) {
+    let p = 0;
+    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (arr[idx(c, r)]) {
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= C || nr < 0 || nr >= R || !arr[idx(nc, nr)]) p++;
+      }
+    }
+    return p;
+  }
+  function load(i) {
+    lv = i;
+    const m = MAPS[i];
+    cells = new Array(C * R).fill(0); sheep = []; rocks = new Set();
+    const ans = new Array(C * R).fill(0);
+    m.forEach((row, r) => [...row].forEach((ch, c) => {
+      if (ch === '#' || ch === 'S') ans[idx(c, r)] = 1;
+      if (ch === 'S') sheep.push({ c, r, bob: Math.random() * 6, hop: 0 });
+      if (ch === 'R') rocks.add(idx(c, r));
+    }));
+    A = ans.reduce((a, b) => a + b, 0); P = perim(ans);
+    window.solveLevel = () => { cells = ans.slice(); check(); };
+    solved = false; paint = null;
+  }
+  function set(i) {
+    if (rocks.has(i)) { if (paint) { K.sfx.bad(); K.shake(3); } return; }
+    if (cells[i] === paint) return;
+    cells[i] = paint;
+    K.sfx.note(paint ? 520 + count() * 8 : 300, 0.05);
+  }
+  const count = () => cells.reduce((a, b) => a + b, 0);
+  function connected() {
+    const start = cells.indexOf(1);
+    if (start < 0) return false;
+    const seen = new Set([start]), q = [start];
+    while (q.length) {
+      const i = q.pop(), c = i % C, r = Math.floor(i / C);
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr, j = idx(nc, nr);
+        if (nc >= 0 && nc < C && nr >= 0 && nr < R && cells[j] && !seen.has(j)) { seen.add(j); q.push(j); }
+      }
+    }
+    return seen.size === count();
+  }
+  function status() {
+    const a = count(), p = perim(cells), conn = a > 0 && connected(), inside = sheep.every(s => cells[idx(s.c, s.r)]);
+    return { a, p, conn, inside, ok: a === A && p === P && conn && inside };
+  }
+  function check() {
+    if (solved || K.state !== 'play') return;
+    if (!status().ok) return;
+    solved = true; K.state = 'over';
+    saved[lv] = 3; K.save('stars', saved);
+    sheep.forEach(s => s.hop = 1);
+    K.burst(400, 300, '#7ee36b', 40, 380, 5); K.burst(400, 300, '#ffd34d', 30, 300);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < MAPS.length - 1) btns.push({ label: 'Next pen', on: () => { K.state = 'play'; load(lv + 1); } });
+      btns.push({ label: 'Pens', ghost: true, on: menu });
+      K.overlay({ kicker: `Pen ${lv + 1}`, title: 'Baa-rilliant!', sub: `Area <b>${A}</b> with exactly <b>${P}</b> fence pieces.`, buttons: btns });
+    }, 1200);
+  }
+
+  function update(dt) { for (const s of sheep) s.hop = Math.max(0, s.hop - dt * 0.5); }
+
+  function drawSheep(c, x, y, t, s) {
+    const hop = s.hop ? Math.abs(Math.sin(t * 9)) * 14 : 0;
+    y -= hop + Math.sin(t * 2 + s.bob) * 1.5;
+    c.fillStyle = 'rgba(0,0,0,.25)'; c.beginPath(); c.ellipse(x, y + hop + 17, 16, 4, 0, 0, 7); c.fill();
+    c.fillStyle = '#3a3040'; c.fillRect(x - 10, y + 6, 4, 10); c.fillRect(x + 6, y + 6, 4, 10);
+    c.save(); c.shadowColor = '#fff'; c.shadowBlur = 8; c.fillStyle = '#f7f8ff';
+    for (const [ox, oy, rr] of [[-9, 0, 9], [0, -5, 10], [9, 0, 9], [0, 4, 10], [-4, -2, 9], [5, 3, 8]]) { c.beginPath(); c.arc(x + ox, y + oy, rr, 0, 7); c.fill(); }
+    c.restore();
+    c.fillStyle = '#3a3040'; c.beginPath(); c.ellipse(x + 13, y - 2, 6, 7.5, 0, 0, 7); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(x + 15, y - 4, 1.6, 0, 7); c.fill();
+  }
+
+  function draw(c, t) {
+    // field
+    const fg = c.createLinearGradient(0, GY, 0, GY + R * CELL);
+    fg.addColorStop(0, '#1f5a34'); fg.addColorStop(1, '#123d26');
+    c.save(); c.shadowColor = '#7ee36b'; c.shadowBlur = 30;
+    K.rr(c, GX - 8, GY - 8, C * CELL + 16, R * CELL + 16, 16); c.fillStyle = fg; c.fill(); c.restore();
+    for (let r = 0; r < R; r++) for (let cc = 0; cc < C; cc++) if ((r + cc) % 2) { c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(GX + cc * CELL, GY + r * CELL, CELL, CELL); }
+    // grass tufts
+    for (let k = 0; k < 40; k++) {
+      const x = GX + ((k * 97) % (C * CELL)), y = GY + ((k * 53) % (R * CELL));
+      c.strokeStyle = 'rgba(126,227,107,.22)'; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(x, y + 6); c.lineTo(x - 3, y); c.moveTo(x, y + 6); c.lineTo(x + 2, y - 1); c.stroke();
+    }
+    // dots at grid corners
+    for (let r = 0; r <= R; r++) for (let cc = 0; cc <= C; cc++) { c.fillStyle = 'rgba(255,255,255,.12)'; c.beginPath(); c.arc(GX + cc * CELL, GY + r * CELL, 1.5, 0, 7); c.fill(); }
+    if (!cells) {
+      [[3, 3], [7, 2], [5, 5]].forEach(([cc, r], i) => drawSheep(c, GX + cc * CELL + 25, GY + r * CELL + 25, t, { bob: i, hop: 0 }));
+      return;
+    }
+    const st = status();
+    // pen
+    for (let r = 0; r < R; r++) for (let cc = 0; cc < C; cc++) if (cells[idx(cc, r)]) {
+      c.fillStyle = st.ok ? 'rgba(255,211,77,.28)' : 'rgba(126,227,107,.32)';
+      c.fillRect(GX + cc * CELL, GY + r * CELL, CELL, CELL);
+    }
+    // fence along boundary edges
+    const edges = [];
+    for (let r = 0; r < R; r++) for (let cc = 0; cc < C; cc++) if (cells[idx(cc, r)]) {
+      const x = GX + cc * CELL, y = GY + r * CELL;
+      const out = (nc, nr) => nc < 0 || nc >= C || nr < 0 || nr >= R || !cells[idx(nc, nr)];
+      if (out(cc, r - 1)) edges.push([x, y, x + CELL, y]);
+      if (out(cc, r + 1)) edges.push([x, y + CELL, x + CELL, y + CELL]);
+      if (out(cc - 1, r)) edges.push([x, y, x, y + CELL]);
+      if (out(cc + 1, r)) edges.push([x + CELL, y, x + CELL, y + CELL]);
+    }
+    c.save(); c.lineCap = 'round';
+    c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 7;
+    for (const [x1, y1, x2, y2] of edges) { c.beginPath(); c.moveTo(x1 + 2, y1 + 3); c.lineTo(x2 + 2, y2 + 3); c.stroke(); }
+    c.strokeStyle = st.ok ? '#ffd34d' : '#c98a4b'; c.lineWidth = 5; c.shadowColor = st.ok ? '#ffd34d' : 'transparent'; c.shadowBlur = st.ok ? 14 : 0;
+    for (const [x1, y1, x2, y2] of edges) { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }
+    c.restore();
+    const posts = new Set();
+    for (const [x1, y1, x2, y2] of edges) { posts.add(x1 + ',' + y1); posts.add(x2 + ',' + y2); }
+    for (const p of posts) { const [x, y] = p.split(',').map(Number); c.fillStyle = '#8a5a2b'; c.fillRect(x - 3.5, y - 6, 7, 10); c.fillStyle = '#e0b07a'; c.fillRect(x - 3.5, y - 6, 7, 3); }
+    // rocks
+    for (const i of rocks) {
+      const x = GX + (i % C) * CELL + 25, y = GY + Math.floor(i / C) * CELL + 27;
+      const g = c.createRadialGradient(x - 6, y - 8, 2, x, y, 20);
+      g.addColorStop(0, '#b9c0d4'); g.addColorStop(1, '#4a5068');
+      c.fillStyle = g; c.beginPath(); c.moveTo(x - 18, y + 8); c.quadraticCurveTo(x - 20, y - 12, x - 2, y - 16); c.quadraticCurveTo(x + 18, y - 14, x + 18, y + 8); c.closePath(); c.fill();
+    }
+    for (const s of sheep) drawSheep(c, GX + s.c * CELL + 25, GY + s.r * CELL + 25, t, s);
+
+    // HUD
+    const good = (v, tgt) => v === tgt ? '#7ee36b' : v > tgt ? '#ff5d73' : '#fff';
+    K.chip(22, 14, 'Pen', `${lv + 1} / ${MAPS.length}`, '#fff', { w: 90, h: 50 });
+    K.panel(c, 160, 12, 220, 56, { r: 14, glow: st.a === A ? 16 : 0, glowColor: 'rgba(126,227,107,.5)' });
+    K.text('AREA', 196, 40, 11, 'rgba(220,228,250,.7)');
+    K.text(`${st.a} / ${A}`, 300, 40, 26, good(st.a, A), { weight: 800 });
+    K.panel(c, 396, 12, 250, 56, { r: 14, glow: st.p === P && st.a ? 16 : 0, glowColor: 'rgba(126,227,107,.5)' });
+    K.text('FENCE', 436, 40, 11, 'rgba(220,228,250,.7)');
+    K.text(`${st.p} / ${P}`, 548, 40, 26, good(st.p, P), { weight: 800 });
+    K.button(clearBtn);
+    let tip = '';
+    if (st.a && !st.conn) tip = 'The pen must be one connected piece.';
+    else if (st.a && !st.inside) tip = 'Every sheep needs to be inside the pen.';
+    else if (st.a === A && st.p !== P) tip = st.p > P ? 'Right area, too much fence. Make it more compact (squarer).' : 'Right area, not enough fence. Stretch it out.';
+    if (tip) K.text(tip, 400, GY + R * CELL + 34, 14, '#ffd34d', { weight: 600 });
+    else if (!st.a) K.text('Drag across the field to build a pen.', 400, GY + R * CELL + 34, 14, 'rgba(220,228,250,.7)');
+  }
+})();
+</script>
+</body>
+</html>

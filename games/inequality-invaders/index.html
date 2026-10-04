@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inequality Invaders</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const COLS = 8, ROWS = 4, AW = 64, AH = 50, SHIP_Y = 494;
+  const STARS = Array.from({ length: 90 }, () => [Math.random() * 800, Math.random() * 600, Math.random() * 1.6 + 0.3, Math.random()]);
+  let ship, aliens, shots, bombs, fx, wave, lives, score, rule, cool, dir, stepT, bombT, phase, phaseT, invuln;
+
+  const K = window.K = MA.game({
+    slug: 'inequality-invaders', title: 'Inequality Invaders', accent: '#7ee36b', accent2: '#4fd1ff', bg: ['#060b1e', '#120826'],
+    tagline: 'Only shoot the invaders whose number makes the inequality true.',
+    how: [
+      'Move with ← → (or drag), and fire with Space (or tap).',
+      'Blast every alien whose number is a <b>solution</b> to the inequality at the bottom.',
+      'Hit a wrong one and you lose a shield. Dodge their shots too!',
+      'Later waves need solving first: 2x + 1 > 7, −x ≥ 3, |x| < 4…',
+    ],
+    start, update, draw,
+    move(x) { if (K.state === 'play') ship.tx = x; },
+    down(x) { if (K.state === 'play') { ship.tx = x; fire(); } },
+    key(k) { if (K.state === 'play' && (k === ' ' || k === 'ArrowUp')) fire(); },
+  });
+
+  // ---- inequalities: each returns { text, test(x), line? } ----
+  const ri = K.ri;
+  const SYM = { '>': (a, b) => a > b, '<': (a, b) => a < b, '≥': (a, b) => a >= b, '≤': (a, b) => a <= b };
+  const flip = { '>': '<', '<': '>', '≥': '≤', '≤': '≥' };
+  function makeRule(w) {
+    const op = K.pick(Object.keys(SYM));
+    if (w <= 2) { const a = ri(-4, 4); return { text: `x ${op} ${a}`, test: x => SYM[op](x, a), hint: true }; }
+    if (w <= 4) {
+      const a = ri(-6, 2), b = a + ri(3, 7), l = K.pick(['<', '≤']), r = K.pick(['<', '≤']);
+      return { text: `${a} ${l} x ${r} ${b}`, test: x => SYM[l](a, x) && SYM[r](x, b), hint: w === 3 };
+    }
+    if (w <= 6) {
+      const m = K.pick([2, 3, -1, -2]), sol = ri(-3, 4), b = ri(-5, 5), c = m * sol + b;
+      const left = (m === -1 ? '−x' : m < 0 ? `−${-m}x` : `${m}x`) + (b ? (b > 0 ? ` + ${b}` : ` − ${-b}`) : '');
+      // m x + b op c  =>  x op' sol
+      const o2 = m < 0 ? flip[op] : op;
+      return { text: `${left} ${op} ${c}`, test: x => SYM[o2](x, sol) };
+    }
+    const h = ri(-2, 2), r = ri(2, 5), inside = h ? (h > 0 ? `x − ${h}` : `x + ${-h}`) : 'x', o = K.pick(['<', '≤', '>', '≥']);
+    return { text: `|${inside}| ${o} ${r}`, test: x => SYM[o](Math.abs(x - h), r) };
+  }
+
+  function start() {
+    ship = { x: 400, tx: 400 }; shots = []; bombs = []; wave = 0; lives = 3; score = 0; cool = 0; invuln = 0;
+    nextWave();
+  }
+  function nextWave() {
+    wave++;
+    rule = makeRule(wave);
+    rule.text = rule.text.replace(/-/g, '−');
+    aliens = [];
+    let good = 0;
+    do {
+      aliens = []; good = 0;
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const v = ri(-9, 9);
+        const ok = rule.test(v);
+        good += ok;
+        aliens.push({ c, r, v, ok, hit: 0, x: 0, y: 0 });
+      }
+    } while (good < 6 || good > 22);
+    fx = { ox: 400 - (COLS * AW) / 2 + AW / 2, oy: 104, drop: 0 };
+    dir = 1; stepT = 0; bombT = 2;
+    phase = 'intro'; phaseT = 1.6;
+    K.sfx.whoosh();
+  }
+
+  function fire() {
+    if (cool > 0 || phase !== 'fight') return;
+    shots.push({ x: ship.x, y: SHIP_Y - 20 });
+    cool = 0.32;
+    K.sfx.note(980, 0.06);
+  }
+
+  function hurt() {
+    if (invuln > 0) return;
+    lives--; invuln = 1.4;
+    K.shake(12); K.flash('#ff5d73', 0.3); K.sfx.boom();
+    K.burst(ship.x, SHIP_Y, '#4fd1ff', 24, 260);
+    if (lives <= 0) { phase = 'dead'; K.gameOver(score, { msg: `You reached wave <b>${wave}</b>.` }); }
+  }
+
+  function update(dt) {
+    cool -= dt; invuln = Math.max(0, invuln - dt);
+    if (K.keys.ArrowLeft) ship.tx = ship.x - 40;
+    if (K.keys.ArrowRight) ship.tx = ship.x + 40;
+    ship.tx = K.clamp(ship.tx, 30, 770);
+    ship.x += K.clamp(ship.tx - ship.x, -480 * dt, 480 * dt);
+    if (phase === 'intro') { phaseT -= dt; if (phaseT <= 0) phase = 'fight'; }
+    if (phase === 'clear') { phaseT -= dt; fx.oy -= 300 * dt; if (phaseT <= 0) nextWave(); }
+    if (phase === 'dead') return;
+
+    // formation
+    const live = aliens.filter(a => !a.dead);
+    if (phase === 'fight') {
+      const speed = 26 + wave * 3 + (COLS * ROWS - live.length) * 1.1;
+      fx.ox += dir * speed * dt;
+      const xs = live.map(a => fx.ox + a.c * AW);
+      if (xs.length && (Math.max(...xs) > 760 && dir > 0 || Math.min(...xs) < 40 && dir < 0)) { dir *= -1; fx.oy += 18; }
+    }
+    for (const a of aliens) { a.x = fx.ox + a.c * AW; a.y = fx.oy + a.r * AH + Math.sin(K.t * 3 + a.c * 0.7) * 3; a.hit = Math.max(0, a.hit - dt * 3); }
+    if (live.some(a => a.y > SHIP_Y - 50)) { lives = 1; invuln = 0; hurt(); return; }
+
+    // alien bombs
+    if (phase === 'fight') {
+      bombT -= dt;
+      if (bombT <= 0 && live.length) {
+        const a = K.pick(live);
+        bombs.push({ x: a.x, y: a.y + 16 });
+        bombT = Math.max(0.6, 1.9 - wave * 0.1) * K.rand(0.6, 1.3);
+      }
+    }
+    for (let i = bombs.length - 1; i >= 0; i--) {
+      const b = bombs[i]; b.y += (170 + wave * 8) * dt;
+      if (b.y > 620) bombs.splice(i, 1);
+      else if (Math.abs(b.x - ship.x) < 24 && Math.abs(b.y - SHIP_Y) < 18) { bombs.splice(i, 1); hurt(); if (phase === 'dead') return; }
+    }
+    // player shots
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const s = shots[i]; s.y -= 620 * dt;
+      if (s.y < -20) { shots.splice(i, 1); continue; }
+      const a = live.find(a => Math.abs(a.x - s.x) < AW / 2 - 6 && Math.abs(a.y - s.y) < AH / 2 - 6);
+      if (!a) continue;
+      shots.splice(i, 1);
+      if (a.ok) {
+        a.dead = true;
+        const pts = 10 * wave;
+        score += pts;
+        K.burst(a.x, a.y, '#7ee36b', 22, 260); K.float(a.x, a.y - 10, '+' + pts, '#7ee36b', 20);
+        K.sfx.pop();
+        if (!aliens.some(x => x.ok && !x.dead)) {
+          const bonus = 50 * wave;
+          score += bonus;
+          K.float(400, 260, `Wave ${wave} cleared! +${bonus}`, '#ffd34d', 34);
+          K.sfx.win(); phase = 'clear'; phaseT = 1.4; bombs = [];
+        }
+      } else {
+        a.hit = 1;
+        K.float(a.x, a.y - 10, `${a.v} ✗`, '#ff5d73', 22);
+        K.burst(a.x, a.y, '#ff5d73', 10, 160);
+        hurt();
+        if (phase === 'dead') return;
+      }
+    }
+  }
+
+  function drawAlien(c, a, t) {
+    const col = a.hit ? '#ff5d73' : ['#7ee36b', '#4fd1ff', '#a66bff', '#ff6bd6'][a.r % 4];
+    const x = a.x, y = a.y, flap = Math.sin(t * 6 + a.c) > 0 ? 1 : -1;
+    c.save();
+    c.shadowColor = col; c.shadowBlur = 14;
+    c.fillStyle = col;
+    // body
+    K.rr(c, x - 22, y - 14, 44, 28, 12); c.fill();
+    // legs/arms
+    c.fillRect(x - 28, y - 4 + flap * 3, 8, 12); c.fillRect(x + 20, y - 4 - flap * 3, 8, 12);
+    c.fillRect(x - 16, y + 12, 6, 7); c.fillRect(x + 10, y + 12, 6, 7);
+    // antennae
+    c.fillRect(x - 12, y - 22, 4, 9); c.fillRect(x + 8, y - 22, 4, 9);
+    c.restore();
+    c.fillStyle = 'rgba(6,10,30,.88)'; K.rr(c, x - 17, y - 10, 34, 20, 8); c.fill();
+    K.text(String(a.v).replace('-', '−'), x, y + 1, 17, '#fff', { weight: 800 });
+  }
+
+  function drawShip(c, x, y, t) {
+    if (invuln > 0 && Math.floor(t * 12) % 2) return;
+    c.save();
+    c.shadowColor = '#4fd1ff'; c.shadowBlur = 20;
+    const g = c.createLinearGradient(0, y - 22, 0, y + 16); g.addColorStop(0, '#d6f5ff'); g.addColorStop(1, '#2a7bd6');
+    c.fillStyle = g;
+    c.beginPath(); c.moveTo(x, y - 24); c.lineTo(x + 26, y + 14); c.lineTo(x + 8, y + 8); c.lineTo(x, y + 14); c.lineTo(x - 8, y + 8); c.lineTo(x - 26, y + 14); c.closePath(); c.fill();
+    c.fillStyle = '#ff9f43'; c.shadowColor = '#ff9f43';
+    c.beginPath(); c.moveTo(x - 6, y + 12); c.lineTo(x, y + 22 + Math.random() * 10); c.lineTo(x + 6, y + 12); c.fill();
+    c.restore();
+  }
+
+  function draw(c, t) {
+    for (const [x, y, s, tw] of STARS) {
+      c.fillStyle = `rgba(255,255,255,${0.3 + 0.5 * Math.abs(Math.sin(t * 1.5 + tw * 9))})`;
+      c.fillRect(x, (y + t * 12 * s) % 600, s, s);
+    }
+    if (!aliens) {
+      const demo = [3, -2, 7, 0, 5, -6];
+      demo.forEach((v, i) => drawAlien(c, { x: 180 + i * 88, y: 170 + Math.sin(t * 2 + i) * 6, v, r: i % 4, c: i, hit: 0 }, t));
+      drawShip(c, 400, SHIP_Y, t);
+      return;
+    }
+    for (const a of aliens) if (!a.dead) drawAlien(c, a, t);
+    for (const s of shots) K.glowLine(c, [[s.x, s.y], [s.x, s.y + 16]], '#7ee36b', 4, 14);
+    for (const b of bombs) K.orb(c, b.x, b.y, 6, '#ff5d73', { glow: 14 });
+    drawShip(c, ship.x, SHIP_Y, t);
+
+    // rule bar
+    K.panel(c, 200, 548, 400, 44, { r: 14, glow: 20, glowColor: 'rgba(126,227,107,.35)', stroke: 'rgba(126,227,107,.5)' });
+    K.text('SHOOT IF', 252, 570, 10, 'rgba(200,255,190,.7)');
+    K.text(rule.text, 430, 570, 24, '#fff', { weight: 800, glow: 10, glowColor: '#7ee36b' });
+    if (rule.hint) {
+      // number line hint
+      for (let v = -9; v <= 9; v++) {
+        const x = 400 + v * 20, ok = rule.test(v);
+        c.fillStyle = ok ? '#7ee36b' : 'rgba(255,255,255,.18)';
+        c.beginPath(); c.arc(x, 534, ok ? 4 : 2.5, 0, 7); c.fill();
+      }
+      K.text('−9', 400 - 9 * 20 - 18, 534, 10, 'rgba(255,255,255,.4)');
+      K.text('9', 400 + 9 * 20 + 14, 534, 10, 'rgba(255,255,255,.4)');
+    }
+    K.chip(22, 14, 'Score', score, '#ffd34d', { w: 120, h: 50 });
+    K.chip(152, 14, 'Wave', wave, '#4fd1ff', { w: 80, h: 50 });
+    const left = aliens.filter(a => a.ok && !a.dead).length;
+    K.chip(242, 14, 'Targets left', left, '#7ee36b', { w: 120, h: 50 });
+    for (let i = 0; i < 3; i++) K.text('◆', 700 + i * 28, 38, 22, i < lives ? '#4fd1ff' : 'rgba(255,255,255,.15)', { glow: i < lives ? 12 : 0 });
+    if (phase === 'intro') {
+      c.globalAlpha = Math.min(1, phaseT * 2);
+      K.text('WAVE ' + wave, 400, 270, 46, '#fff', { weight: 800, glow: 24, glowColor: '#7ee36b' });
+      K.text('Shoot if ' + rule.text, 400, 318, 24, '#7ee36b', { weight: 700 });
+      c.globalAlpha = 1;
+    }
+  }
+})();
+</script>
+</body>
+</html>

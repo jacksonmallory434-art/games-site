@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fraction Slicer</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const G = 420, BAR_T = 44;
+  const HUES = ['#ff5d73', '#ff9f43', '#ffd34d', '#7ee36b', '#2ee6c5', '#4fd1ff', '#a66bff', '#ff6bd6'];
+  let bars, pieces, trail, score, lives, spawnT, level, sliced, combo, lastPtr, maxCombo;
+
+  const K = window.K = MA.game({
+    slug: 'fraction-slicer', title: 'Fraction Slicer', accent: '#ff9f43', accent2: '#ff5d73', bg: ['#1c0b1c', '#0b1028'],
+    tagline: 'Bars fly up with a fraction on them. Slice each one at exactly that point.',
+    how: [
+      'Swipe through a bar (drag your mouse or finger) to cut it.',
+      'Cut at the fraction shown, measured from the bar\'s <b>left end</b>. Cut 3/4 of the way along for <b>3/4</b>.',
+      'Closer cuts score more. A bad cut or a missed bar costs a heart.',
+      'Later bars lose their guide marks and switch to decimals and percents.',
+    ],
+    start, update, draw,
+    down(x, y) { trail = [{ x, y, t: K.t }]; lastPtr = [x, y]; },
+    move(x, y) {
+      if (!K.ptr.down || K.state !== 'play') return;
+      trail.push({ x, y, t: K.t });
+      if (lastPtr) cut(lastPtr[0], lastPtr[1], x, y);
+      lastPtr = [x, y];
+    },
+    up() { lastPtr = null; },
+  });
+
+  function start() {
+    bars = []; pieces = []; trail = []; score = 0; lives = 3; spawnT = 0.6; level = 0; sliced = 0; combo = 0; maxCombo = 0;
+  }
+
+  function makeTarget() {
+    const dens = level < 4 ? [2, 4] : level < 8 ? [2, 3, 4, 5] : [3, 4, 5, 6, 8, 10];
+    const d = K.pick(dens), n = K.ri(1, d - 1), g = K.gcd(n, d);
+    const val = n / d;
+    let label = `${n / g}/${d / g}`, ticks = d;
+    if (level >= 10 && Math.random() < 0.35) { label = (Math.round(val * 100) / 100).toString().replace(/^0/, '0'); ticks = 10; }
+    if (level >= 14 && Math.random() < 0.35) { const p = K.ri(1, 19) * 5; label = p + '%'; ticks = 0; return { val: p / 100, label, ticks }; }
+    if (level >= 12) ticks = 0;
+    return { val, label, ticks };
+  }
+
+  function spawn() {
+    const tg = makeTarget();
+    const L = K.rand(240, 300);
+    const fromLeft = Math.random() < 0.5;
+    bars.push({
+      ...tg, L,
+      x: fromLeft ? K.rand(160, 380) : K.rand(420, 640), y: 660,
+      vx: (fromLeft ? 1 : -1) * K.rand(40, 110), vy: -K.rand(470, 530),
+      a: K.rand(-0.25, 0.25), va: K.rand(-0.35, 0.35),
+      color: K.pick(HUES),
+    });
+  }
+
+  function cut(x1, y1, x2, y2) {
+    for (let i = bars.length - 1; i >= 0; i--) {
+      const b = bars[i];
+      const cos = Math.cos(-b.a), sin = Math.sin(-b.a);
+      const lx1 = (x1 - b.x) * cos - (y1 - b.y) * sin, ly1 = (x1 - b.x) * sin + (y1 - b.y) * cos;
+      const lx2 = (x2 - b.x) * cos - (y2 - b.y) * sin, ly2 = (x2 - b.x) * sin + (y2 - b.y) * cos;
+      if ((ly1 > 0) === (ly2 > 0)) continue;
+      const k = ly1 / (ly1 - ly2), lx = lx1 + (lx2 - lx1) * k;
+      if (Math.abs(lx) > b.L / 2) continue;
+      const f = (lx + b.L / 2) / b.L;
+      bars.splice(i, 1);
+      slice(b, f);
+    }
+  }
+
+  function slice(b, f) {
+    const err = Math.abs(f - b.val);
+    const wx = b.x + Math.cos(b.a) * (f - 0.5) * b.L, wy = b.y + Math.sin(b.a) * (f - 0.5) * b.L;
+    let pts = 0, word, col;
+    if (err <= 0.025) { pts = 100; word = 'PERFECT!'; col = '#ffd34d'; combo++; }
+    else if (err <= 0.06) { pts = 60; word = 'Great'; col = '#7ee36b'; combo = Math.max(1, combo); }
+    else if (err <= 0.12) { pts = 25; word = 'OK'; col = '#4fd1ff'; combo = 0; }
+    else { word = 'Way off'; col = '#ff5d73'; combo = 0; }
+    maxCombo = Math.max(maxCombo, combo);
+    const mult = combo >= 3 ? 2 : 1;
+    score += pts * mult;
+    sliced++;
+    level = Math.floor(sliced / 3);
+    // two halves
+    const mk = (from, to, dir) => {
+      const len = (to - from) * b.L, mid = (from + to) / 2;
+      pieces.push({ x: b.x + Math.cos(b.a) * (mid - 0.5) * b.L, y: b.y + Math.sin(b.a) * (mid - 0.5) * b.L, len, a: b.a,
+        vx: b.vx + dir * K.rand(90, 140), vy: b.vy * 0.4 - 80, va: dir * K.rand(1.5, 3), color: b.color, life: 2 });
+    };
+    mk(0, f, -1); mk(f, 1, 1);
+    K.burst(wx, wy, b.color, 20, 260);
+    K.burst(wx, wy, '#fff', 8, 160, 3);
+    K.float(wx, wy - 40, word + (pts ? ' +' + pts * mult : ''), col, word === 'PERFECT!' ? 30 : 24);
+    K.float(wx, wy + 14, `you cut ${Math.round(f * 100)}% · target ${Math.round(b.val * 100)}%`, 'rgba(230,236,255,.85)', 14);
+    if (!pts) loseLife(wx, wy);
+    else { K.sfx.whoosh(); K.sfx.note(pts === 100 ? 880 : 660, 0.15); if (combo >= 3) K.float(wx, wy - 76, 'Combo ×2', '#ff9f43', 20); }
+  }
+
+  function loseLife(x, y) {
+    lives--; combo = 0;
+    K.shake(10); K.flash('#ff5d73', 0.25); K.sfx.bad();
+    if (lives <= 0) K.gameOver(score, { msg: `You sliced <b>${sliced}</b> bars. Longest perfect streak: <b>${maxCombo}</b>.` });
+  }
+
+  function update(dt) {
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      spawn();
+      if (level >= 6 && Math.random() < 0.35) spawn();
+      spawnT = Math.max(1.0, 2.3 - level * 0.07);
+    }
+    for (let i = bars.length - 1; i >= 0; i--) {
+      const b = bars[i];
+      b.vy += G * dt * 0.62; b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
+      if (b.vy > 0 && b.y > 680) { bars.splice(i, 1); K.float(K.clamp(b.x, 60, 740), 560, 'Missed!', '#ff5d73', 24); loseLife(); if (K.state !== 'play') return; }
+    }
+    for (let i = pieces.length - 1; i >= 0; i--) {
+      const p = pieces[i];
+      p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.a += p.va * dt; p.life -= dt;
+      if (p.life <= 0 || p.y > 700) pieces.splice(i, 1);
+    }
+    trail = trail.filter(p => K.t - p.t < 0.14);
+  }
+
+  function drawBar(c, x, y, len, a, color, o = {}) {
+    c.save();
+    c.translate(x, y); c.rotate(a);
+    c.shadowColor = color; c.shadowBlur = 22;
+    const g = c.createLinearGradient(0, -BAR_T / 2, 0, BAR_T / 2);
+    g.addColorStop(0, K.shade(color, 0.35)); g.addColorStop(0.5, color); g.addColorStop(1, K.shade(color, -0.4));
+    c.fillStyle = g;
+    K.rr(c, -len / 2, -BAR_T / 2, len, BAR_T, 10); c.fill();
+    c.shadowBlur = 0;
+    c.fillStyle = 'rgba(255,255,255,.28)'; K.rr(c, -len / 2 + 5, -BAR_T / 2 + 4, len - 10, 9, 5); c.fill();
+    if (o.ticks) {
+      c.fillStyle = 'rgba(0,0,0,.3)';
+      for (let k = 1; k < o.ticks; k++) c.fillRect(-len / 2 + len * k / o.ticks - 1.5, -BAR_T / 2 + 6, 3, BAR_T - 12);
+    }
+    if (o.label) {
+      // left-end marker so players know where 0 is
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(-len / 2 + 9, 0, 4, 0, 7); c.fill();
+      K.panel(c, -38, -BAR_T / 2 - 46, 76, 38, { r: 12, fill: 'rgba(8,10,26,.85)', stroke: K.alpha(color, 0.8), lw: 2 });
+      K.text(o.label, 0, -BAR_T / 2 - 27, 22, '#fff', { weight: 800, c });
+    }
+    c.restore();
+  }
+
+  function draw(c, t) {
+    if (!bars) {
+      drawBar(c, 230, 250 + Math.sin(t * 1.5) * 12, 260, -0.15, '#ff9f43', { label: '3/4', ticks: 4 });
+      drawBar(c, 560, 380 + Math.sin(t * 1.3 + 2) * 12, 240, 0.12, '#a66bff', { label: '2/5', ticks: 5 });
+      return;
+    }
+    for (const p of pieces) { c.globalAlpha = Math.min(1, p.life * 2); drawBar(c, p.x, p.y, p.len, p.a, p.color); }
+    c.globalAlpha = 1;
+    for (const b of bars) drawBar(c, b.x, b.y, b.L, b.a, b.color, { label: b.label, ticks: b.ticks });
+    // blade trail
+    if (trail.length > 1) {
+      c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+      for (let i = 1; i < trail.length; i++) {
+        const k = i / trail.length;
+        c.strokeStyle = `rgba(255,255,255,${k})`; c.shadowColor = '#ffb37a'; c.shadowBlur = 16; c.lineWidth = 2 + k * 7;
+        c.beginPath(); c.moveTo(trail[i - 1].x, trail[i - 1].y); c.lineTo(trail[i].x, trail[i].y); c.stroke();
+      }
+      c.restore();
+    }
+    K.chip(22, 16, 'Score', score, '#ffd34d', { w: 130 });
+    K.chip(162, 16, 'Sliced', sliced, '#fff', { w: 100 });
+    if (combo >= 2) K.chip(272, 16, 'Perfect streak', combo, '#ff9f43', { w: 130 });
+    for (let i = 0; i < 3; i++) K.text('♥', 700 + i * 32, 40, 28, i < lives ? '#ff5d73' : 'rgba(255,255,255,.15)', { glow: i < lives ? 14 : 0 });
+  }
+})();
+</script>
+</body>
+</html>

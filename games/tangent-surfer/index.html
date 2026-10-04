@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tangent Surfer</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const S = 60, SX = 250, BASE = 330;
+  const STARS = Array.from({ length: 70 }, () => [Math.random() * 800, Math.random() * 260, Math.random() * 1.5 + 0.4]);
+  let wx, speed, board, balance, score, streak, best, waves, perfectT, dist, tilt, alive;
+
+  const K = window.K = MA.game({
+    slug: 'tangent-surfer', title: 'Tangent Surfer', accent: '#2ee6c5', accent2: '#4fd1ff', bg: ['#070d26', '#0a2033'],
+    tagline: 'Ride the curve! Keep your board on the tangent line, matching the slope of the wave.',
+    how: [
+      'Move your mouse or finger up and down (or hold ↑ ↓) to tilt your board.',
+      'Match the wave\'s slope, its <b>derivative</b>, at the point where you\'re riding.',
+      'Stay close and your balance holds. Get it within 3° to score Perfect points.',
+      'Waves get steeper and faster the further you surf. Don\'t wipe out!',
+    ],
+    start, update, draw,
+    move(x, y) { if (K.state === 'play') tilt = 'ptr'; },
+    down(x, y) { if (K.state === 'play') tilt = 'ptr'; },
+    key(k) { if (k === 'ArrowUp' || k === 'ArrowDown') tilt = 'keys'; },
+  });
+
+  function start() {
+    wx = 0; speed = 2.4; board = 0; balance = 100; score = 0; streak = 0; best = 0; perfectT = 0; dist = 0; tilt = 'ptr'; alive = true;
+    waves = [];
+    for (let i = 0; i < 4; i++) waves.push({ a: 0, k: K.rand(0.25, 0.9), p: K.rand(0, 6) });
+  }
+  // amplitude ramps up with distance so it starts gentle
+  const amp = (x, i) => Math.min([1.3, 0.7, 0.45, 0.25][i], 0.25 + x * [0.012, 0.007, 0.004, 0.002][i]);
+  const f = x => waves.reduce((s, w, i) => s + amp(x, i) * Math.sin(w.k * x + w.p), 0);
+  const df = x => (f(x + 0.001) - f(x - 0.001)) / 0.002;
+
+  const surfX = () => wx + SX / S;
+  const sy = x => BASE - f(x) * S;
+
+  function update(dt) {
+    dist += speed * dt; wx += speed * dt;
+    speed = Math.min(6, 2.4 + dist * 0.012);
+    // controls
+    if (K.keys.ArrowUp) { board = Math.min(4, board + 2.4 * dt); tilt = 'keys'; }
+    if (K.keys.ArrowDown) { board = Math.max(-4, board - 2.4 * dt); tilt = 'keys'; }
+    if (tilt === 'ptr' && K.ptr.active) {
+      const want = K.clamp((sy(surfX()) - K.ptr.y) / 70, -4, 4);
+      board += (want - board) * Math.min(1, dt * 14);
+    }
+    const slope = df(surfX());
+    const err = Math.abs(Math.atan(board) - Math.atan(slope)) * 180 / Math.PI;
+    if (err <= 3) {
+      perfectT += dt; streak += dt;
+      score += Math.round(30 * dt * (1 + Math.floor(streak / 3)) * 10) / 10;
+      balance = Math.min(100, balance + 25 * dt);
+      if (perfectT > 0.6) { perfectT = 0; K.sfx.tick(); }
+    } else {
+      perfectT = 0; streak = 0;
+      if (err <= 10) balance = Math.min(100, balance + 8 * dt);
+      else balance -= (err - 10) * 2.6 * dt;
+    }
+    best = Math.max(best, streak);
+    score += speed * dt * 2;
+    if (balance <= 0) wipeout();
+  }
+
+  function wipeout() {
+    balance = 0; alive = false;
+    const x = SX, y = sy(surfX());
+    K.burst(x, y - 20, '#ffffff', 40, 340, 5); K.burst(x, y - 20, '#4fd1ff', 30, 260);
+    K.shake(14); K.sfx.boom();
+    const total = Math.round(score);
+    K.gameOver(total, { title: 'Wipeout!', msg: `You surfed <b>${Math.round(dist * 10)} m</b>. Longest perfect ride: <b>${best.toFixed(1)} s</b>.` });
+  }
+
+  function drawWave(c, t, offset, shade, foam) {
+    const g = c.createLinearGradient(0, 160, 0, 600);
+    g.addColorStop(0, shade[0]); g.addColorStop(1, shade[1]);
+    c.beginPath(); c.moveTo(0, 600);
+    for (let x = 0; x <= 800; x += 6) c.lineTo(x, sy(wx + x / S) + offset);
+    c.lineTo(800, 600); c.closePath(); c.fillStyle = g; c.fill();
+    if (foam) {
+      const pts = [];
+      for (let x = 0; x <= 800; x += 6) pts.push([x, sy(wx + x / S) + offset]);
+      K.glowLine(c, pts, '#bff8ff', 3, 14);
+    }
+  }
+
+  function draw(c, t) {
+    for (const [x, y, s] of STARS) { c.fillStyle = `rgba(255,255,255,${0.35 + 0.4 * Math.sin(t + x)})`; c.fillRect(x, y, s, s); }
+    // moon
+    K.orb(c, 660, 90, 34, '#fff3c8', { glow: 40 });
+    if (!waves) {
+      waves = [{ a: 0, k: 0.5, p: 0 }, { a: 0, k: 0.8, p: 1 }, { a: 0, k: 0.3, p: 2 }, { a: 0, k: 1, p: 3 }];
+      wx = t * 2; dist = 0; board = df(wx + SX / S);
+      drawScene(c, t);
+      waves = null;
+      return;
+    }
+    drawScene(c, t);
+    // HUD
+    K.chip(22, 14, 'Score', Math.round(score), '#ffd34d', { w: 120, h: 50 });
+    K.chip(152, 14, 'Distance', Math.round(dist * 10) + ' m', '#fff', { w: 110, h: 50 });
+    if (streak > 0.5) K.chip(272, 14, 'Perfect', streak.toFixed(1) + 's', '#7ee36b', { w: 100, h: 50 });
+    // balance
+    K.panel(c, 520, 14, 258, 50, { r: 12 });
+    K.text('BALANCE', 560, 39, 10, 'rgba(220,228,250,.7)');
+    K.rr(c, 604, 32, 160, 14, 7); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill();
+    K.rr(c, 604, 32, 160 * balance / 100, 14, 7); c.fillStyle = balance < 30 ? '#ff5d73' : balance < 60 ? '#ffd34d' : '#2ee6c5';
+    c.save(); c.shadowColor = c.fillStyle; c.shadowBlur = 12; c.fill(); c.restore();
+    // slope readout
+    const slope = df(surfX());
+    K.panel(c, 250, 530, 300, 54, { r: 14, fill: 'rgba(5,10,30,.7)' });
+    K.text('WAVE SLOPE', 325, 546, 9, 'rgba(220,228,250,.6)');
+    K.text(slope.toFixed(2), 325, 568, 20, '#bff8ff', { weight: 800 });
+    K.text('YOUR BOARD', 475, 546, 9, 'rgba(220,228,250,.6)');
+    const err = Math.abs(Math.atan(board) - Math.atan(slope)) * 180 / Math.PI;
+    K.text(board.toFixed(2), 475, 568, 20, err <= 3 ? '#7ee36b' : err <= 10 ? '#ffd34d' : '#ff5d73', { weight: 800 });
+  }
+
+  function drawScene(c, t) {
+    drawWave(c, t, 60, ['rgba(20,70,120,.6)', 'rgba(5,15,40,.9)'], false);
+    drawWave(c, t, 0, ['#1b8fb0', '#062a4a'], true);
+    const x = SX, y = sy(surfX()), slope = df(surfX());
+    const help = !waves || dist < 30;
+    // true tangent (fades out after the tutorial stretch)
+    if (help || !alive) {
+      const a = Math.atan(slope), L = 170;
+      c.save(); c.globalAlpha = help ? Math.max(0.15, 1 - dist / 30) : 0.6; c.setLineDash([8, 8]); c.strokeStyle = '#fff'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(x - Math.cos(a) * L, y + Math.sin(a) * L); c.lineTo(x + Math.cos(a) * L, y - Math.sin(a) * L); c.stroke(); c.restore();
+    }
+    // board line (your guess at the tangent)
+    const ba = Math.atan(board);
+    c.save(); c.globalAlpha = 0.6;
+    K.glowLine(c, [[x - Math.cos(ba) * 120, y + Math.sin(ba) * 120], [x + Math.cos(ba) * 120, y - Math.sin(ba) * 120]], '#ffd34d', 2, 10);
+    c.restore();
+    // surfer
+    c.save(); c.translate(x, y); c.rotate(-ba);
+    K.tile(c, -30, -9, 60, 9, '#ff6bd6', { r: 5, depth: 3, glow: 12 });
+    c.strokeStyle = '#f4f6ff'; c.lineWidth = 4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-9, -10); c.lineTo(-2, -30); c.lineTo(9, -10); c.moveTo(-2, -30); c.lineTo(0, -48);
+    c.moveTo(0, -42); c.lineTo(-16, -36); c.moveTo(0, -42); c.lineTo(16, -46); c.stroke();
+    K.orb(c, 1, -56, 7, '#ffd9b3', { glow: 0 });
+    c.restore();
+    // spray
+    if (waves && alive && Math.random() < 0.6) K.burst(x - 26, y - 2, '#dcfaff', 1, 90, 2, false);
+  }
+})();
+</script>
+</body>
+</html>

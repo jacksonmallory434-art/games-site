@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ratio Mixer</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const PAINTS = {
+    Y: { name: 'Yellow', rgb: [255, 214, 10], hex: '#ffd60a' },
+    C: { name: 'Cyan', rgb: [0, 166, 255], hex: '#00a6ff' },
+    M: { name: 'Magenta', rgb: [255, 45, 154], hex: '#ff2d9a' },
+    W: { name: 'White', rgb: [250, 250, 255], hex: '#f4f6ff' },
+  };
+  const CAP = 24, SHIFT = 100;
+  const BUCKET = { x: 400, y: 330, w: 210, h: 230 };
+  let order, have, added, timeLeft, score, served, pours, buttons, dumpBtn, streak;
+
+  const K = window.K = MA.game({
+    slug: 'ratio-mixer', title: 'Ratio Mixer', accent: '#2ee6c5', accent2: '#ff2d9a', bg: ['#0a1a24', '#1a0b26'],
+    tagline: 'Run a paint shop. Mix every order to the exact ratio before your shift ends.',
+    how: [
+      'Each order asks for a ratio, like <b>3 : 2</b> yellow to cyan.',
+      'The bucket might already have paint in it. You can only add, so find an <b>equivalent ratio</b> (6 : 4, 9 : 6…).',
+      'Tap a paint can (or press 1, 2, 3) to add one part. The order ships the moment your ratio matches.',
+      'Use the least paint possible for a Perfect Mix bonus. Overflow the bucket and it spills.',
+    ],
+    start, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      buttons.forEach((b, i) => { if (K.hit(b, x, y)) pour(i); });
+      if (K.hit(dumpBtn, x, y)) dump();
+    },
+    key(k) {
+      if (K.state !== 'play') return;
+      if (k >= '1' && k <= '3') pour(+k - 1);
+      if (k === 'd' || k === 'D' || k === 'Backspace') dump();
+    },
+  });
+
+  function start() {
+    timeLeft = SHIFT; score = 0; served = 0; streak = 0; pours = [];
+    newOrder();
+  }
+
+  function newOrder() {
+    const three = served >= 4 && Math.random() < 0.45;
+    const keys = K.shuffle(three ? ['Y', 'C', 'M', 'W'] : ['Y', 'C', 'M']).slice(0, three ? 3 : 2);
+    let ratio;
+    do { ratio = keys.map(() => K.ri(1, three ? 3 : 5)); } while (ratio.reduce(K.gcd) !== 1 || ratio.every(v => v === ratio[0]) && ratio.length === 2 && ratio[0] !== 1);
+    // starting paint: something not already equivalent, with a reachable answer
+    let start, kMin;
+    for (let tries = 0; tries < 200; tries++) {
+      start = served < 1 ? keys.map(() => 0) : keys.map(() => K.ri(0, served < 3 ? 3 : 6));
+      kMin = Math.max(1, ...start.map((s, i) => Math.ceil(s / ratio[i])));
+      const tot = kMin * ratio.reduce((a, b) => a + b, 0);
+      const equiv = start.every((s, i) => s === kMin * ratio[i]);
+      if (tot <= CAP - 2 && !equiv) break;
+    }
+    order = { keys, ratio, start: start.slice(), best: kMin * ratio.reduce((a, b) => a + b, 0) - start.reduce((a, b) => a + b, 0), t: 0 };
+    have = start.slice(); added = 0;
+    const n = keys.length, w = 150, gap = 18, total = n * w + (n - 1) * gap;
+    buttons = keys.map((k, i) => ({ x: 400 - total / 2 + i * (w + gap), y: 506, w, h: 74, label: PAINTS[k].name, sub: `press ${i + 1}`, color: PAINTS[k].hex, size: 22, k }));
+    dumpBtn = { x: 588, y: 528, w: 90, h: 44, label: 'Dump', size: 16, color: '#39405a', textColor: '#e6eaf8' };
+  }
+
+  function mix(amts, keys) {
+    const tot = amts.reduce((a, b) => a + b, 0);
+    if (!tot) return null;
+    const c = [0, 1, 2].map(j => Math.round(amts.reduce((s, a, i) => s + a * PAINTS[keys[i]].rgb[j], 0) / tot));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
+  }
+  const matches = () => {
+    if (have.some(v => v === 0)) return false;
+    const k = have[0] / order.ratio[0];
+    return have.every((v, i) => v === k * order.ratio[i]);
+  };
+
+  function pour(i) {
+    const b = buttons[i];
+    if (!b) return;
+    have[i]++; added++;
+    pours.push({ i, t: 0, x: b.x + b.w / 2, color: b.color });
+    K.sfx.note(300 + i * 90 + have[i] * 12, 0.08);
+    if (have.reduce((a, b) => a + b, 0) > CAP) {
+      K.float(BUCKET.x, BUCKET.y - 150, 'Overflow! −5s', '#ff5d73', 28);
+      K.shake(10); K.sfx.bad(); K.burst(BUCKET.x, BUCKET.y - BUCKET.h / 2, mix(have, order.keys), 30, 300);
+      timeLeft -= 5; streak = 0;
+      have = order.start.slice(); added = 0;
+      return;
+    }
+    if (matches()) ship();
+  }
+
+  function dump() {
+    if (have.every((v, i) => v === order.start[i])) return;
+    K.sfx.whoosh(); timeLeft -= 2;
+    K.float(BUCKET.x, BUCKET.y - 150, 'Back to start −2s', '#ff9f43', 22);
+    have = order.start.slice(); added = 0; streak = 0;
+  }
+
+  function ship() {
+    const perfect = added === order.best;
+    streak = perfect ? streak + 1 : 0;
+    const pts = 100 + (perfect ? 50 * streak : 0);
+    score += pts; served++;
+    timeLeft += perfect ? 6 : 3;
+    K.burst(BUCKET.x, BUCKET.y - 80, mix(have, order.keys), 40, 360, 5);
+    K.burst(BUCKET.x, BUCKET.y - 80, '#fff', 14, 200);
+    K.float(BUCKET.x, BUCKET.y - 170, perfect ? 'Perfect mix! +' + pts : 'Order up! +' + pts, perfect ? '#ffd34d' : '#7ee36b', 32);
+    K.float(BUCKET.x, BUCKET.y - 130, have.join(' : ') + ' = ' + order.ratio.join(' : '), '#fff', 20);
+    K.sfx.win();
+    setTimeout(() => { if (K.state === 'play') newOrder(); }, 0);
+  }
+
+  function update(dt) {
+    timeLeft -= dt;
+    order.t += dt;
+    for (const p of pours) p.t += dt;
+    pours = pours.filter(p => p.t < 0.5);
+    if (timeLeft <= 0) { timeLeft = 0; K.gameOver(score, { title: 'Shift over', msg: `You filled <b>${served}</b> order${served === 1 ? '' : 's'}.` }); }
+  }
+
+  function drawBucket(c, t, amts, keys) {
+    const { x, y, w, h } = BUCKET, top = y - h / 2, bot = y + h / 2;
+    const tot = amts.reduce((a, b) => a + b, 0);
+    const col = mix(amts, keys);
+    // back glass
+    c.save();
+    c.beginPath(); c.moveTo(x - w / 2, top); c.lineTo(x - w / 2 + 16, bot); c.quadraticCurveTo(x, bot + 16, x + w / 2 - 16, bot); c.lineTo(x + w / 2, top); c.closePath();
+    c.fillStyle = 'rgba(255,255,255,.05)'; c.fill();
+    c.save(); c.clip();
+    if (tot) {
+      const lvl = bot + 10 - (h + 10) * Math.min(1, tot / CAP);
+      c.shadowColor = col; c.shadowBlur = 30;
+      c.fillStyle = col;
+      c.beginPath(); c.moveTo(x - w, bot + 40);
+      for (let xx = x - w / 2; xx <= x + w / 2; xx += 6) c.lineTo(xx, lvl + Math.sin(xx / 16 + t * 3) * 3);
+      c.lineTo(x + w, bot + 40); c.fill();
+      c.shadowBlur = 0;
+      // swirl highlights
+      c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 3;
+      for (let k = 0; k < 3; k++) { c.beginPath(); c.ellipse(x + Math.sin(t + k * 2) * 30, lvl + 30 + k * 34, 50 - k * 8, 6, 0, t * 0.5 + k, t * 0.5 + k + 2.2); c.stroke(); }
+      const sheen = c.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+      sheen.addColorStop(0, 'rgba(0,0,0,.25)'); sheen.addColorStop(0.3, 'rgba(255,255,255,.12)'); sheen.addColorStop(1, 'rgba(0,0,0,.3)');
+      c.fillStyle = sheen; c.fillRect(x - w / 2, lvl - 10, w, bot - lvl + 40);
+    }
+    c.restore();
+    // glass outline
+    c.strokeStyle = 'rgba(220,240,255,.55)'; c.lineWidth = 3; c.shadowColor = '#2ee6c5'; c.shadowBlur = 12; c.stroke();
+    c.restore();
+    // capacity marks
+    for (let i = 4; i < CAP; i += 4) {
+      const yy = bot + 10 - (h + 10) * i / CAP;
+      c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(x + w / 2 - 22, yy, 12, 2);
+      K.text(String(i), x + w / 2 + 6, yy, 10, 'rgba(255,255,255,.45)', { align: 'left' });
+    }
+    // rim
+    K.tile(c, x - w / 2 - 10, top - 8, w + 20, 12, '#8fb7d0', { r: 6, depth: 2 });
+  }
+
+  function draw(c, t) {
+    if (!order) {
+      drawBucket(c, t, [3 + Math.round(Math.sin(t) * 2) + 2, 2], ['Y', 'C']);
+      return;
+    }
+    // pour streams
+    for (const p of pours) {
+      const k = p.t / 0.5;
+      c.save(); c.strokeStyle = p.color; c.lineWidth = 10 * (1 - k); c.lineCap = 'round'; c.shadowColor = p.color; c.shadowBlur = 16;
+      c.beginPath(); c.moveTo(p.x, 500); c.quadraticCurveTo(p.x, 240, BUCKET.x + (p.x - BUCKET.x) * 0.2, 230 + k * 120); c.stroke(); c.restore();
+    }
+    drawBucket(c, t, have, order.keys);
+
+    // order ticket
+    K.panel(c, 20, 82, 200, 300, { r: 18, glow: 20, glowColor: 'rgba(46,230,197,.25)' });
+    K.text('ORDER #' + (served + 1), 120, 104, 12, '#2ee6c5');
+    const tgt = mix(order.ratio, order.keys);
+    c.save(); c.shadowColor = tgt; c.shadowBlur = 24; c.fillStyle = tgt; K.rr(c, 50, 122, 140, 70, 14); c.fill(); c.restore();
+    K.text('target color', 120, 206, 11, 'rgba(220,228,250,.6)');
+    order.keys.forEach((k, i) => {
+      const xx = 120 + (i - (order.keys.length - 1) / 2) * 56;
+      K.orb(c, xx, 240, 10, PAINTS[k].hex, { glow: 8 });
+      K.text(String(order.ratio[i]), xx, 274, 34, '#fff', { weight: 800, glow: 10 });
+      if (i) K.text(':', xx - 28, 272, 28, 'rgba(255,255,255,.6)');
+    });
+    K.text(order.keys.map(k => PAINTS[k].name).join(' : '), 120, 306, 11, 'rgba(220,228,250,.7)');
+    K.text(`best fix: add ${order.best} part${order.best === 1 ? '' : 's'}`, 120, 352, 12, '#ffd34d', { weight: 600 });
+
+    // your bucket counts
+    K.panel(c, 580, 82, 200, 300, { r: 18 });
+    K.text('IN THE BUCKET', 680, 104, 12, 'rgba(220,228,250,.7)');
+    const cur = mix(have, order.keys);
+    c.save(); if (cur) { c.shadowColor = cur; c.shadowBlur = 24; c.fillStyle = cur; } else c.fillStyle = 'rgba(255,255,255,.06)';
+    K.rr(c, 610, 122, 140, 70, 14); c.fill(); c.restore();
+    K.text('your color', 680, 206, 11, 'rgba(220,228,250,.6)');
+    order.keys.forEach((k, i) => {
+      const xx = 680 + (i - (order.keys.length - 1) / 2) * 56;
+      K.orb(c, xx, 240, 10, PAINTS[k].hex, { glow: 8 });
+      K.text(String(have[i]), xx, 274, 34, '#fff', { weight: 800 });
+      if (i) K.text(':', xx - 28, 272, 28, 'rgba(255,255,255,.6)');
+    });
+    K.text(`added ${added} · total ${have.reduce((a, b) => a + b, 0)}/${CAP}`, 680, 306, 11, 'rgba(220,228,250,.7)');
+
+    // top bar
+    K.chip(22, 14, 'Score', score, '#ffd34d', { w: 120, h: 54 });
+    K.chip(152, 14, 'Orders', served, '#2ee6c5', { w: 90, h: 54 });
+    if (streak > 1) K.chip(252, 14, 'Perfect streak', streak, '#ff2d9a', { w: 120, h: 54 });
+    const p = timeLeft / SHIFT;
+    K.panel(c, 520, 14, 258, 54, { r: 12 });
+    K.text('SHIFT', 548, 41, 11, 'rgba(220,228,250,.7)');
+    K.rr(c, 580, 34, 180, 14, 7); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill();
+    K.rr(c, 580, 34, 180 * K.clamp(p, 0, 1), 14, 7); c.fillStyle = p < 0.2 ? '#ff5d73' : '#2ee6c5';
+    c.save(); c.shadowColor = c.fillStyle; c.shadowBlur = 12; c.fill(); c.restore();
+    K.text(Math.ceil(timeLeft) + 's', 670, 41, 10, '#0b0e1c', { weight: 800 });
+
+    buttons.forEach(b => K.button(b));
+    K.button(dumpBtn);
+  }
+})();
+</script>
+</body>
+</html>

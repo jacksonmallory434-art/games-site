@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coin Cascade</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const TYPES = {
+    1: { r: 21, face: '#d9824a', rim: '#8a4a22', label: '1¢' },
+    5: { r: 25, face: '#c9d2e0', rim: '#7b879b', label: '5¢' },
+    10: { r: 20, face: '#dfe6f2', rim: '#8691a6', label: '10¢' },
+    25: { r: 29, face: '#e6edf8', rim: '#8e9ab0', label: '25¢' },
+    100: { r: 32, face: '#ffd34d', rim: '#b8860b', label: '$1' },
+  };
+  const BASKET_Y = 520, BW = 136;
+  let bx, tbx, coins, spawnT, target, total, round, lives, score, timeLeft, roundTime, caught, phase, phaseT, streak;
+
+  const K = window.K = MA.game({
+    slug: 'coin-cascade', title: 'Coin Cascade', accent: '#ffd34d', accent2: '#ff9f43', bg: ['#1b1206', '#0c1026'],
+    tagline: 'It\'s raining money. Catch coins to make the exact amount, but don\'t go over!',
+    how: [
+      'Move with your mouse, finger, or ← → keys.',
+      'Catch coins until your basket equals the <b>target</b> exactly.',
+      'Go over and your basket busts. Run out of time and you lose a life too.',
+      'Faster rounds are worth bonus points.',
+    ],
+    start, update, draw,
+    move(x) { tbx = x; },
+    down(x) { tbx = x; },
+  });
+
+  function start() {
+    bx = tbx = 400; coins = []; spawnT = 0; round = 0; lives = 3; score = 0; streak = 0;
+    nextRound();
+  }
+  function nextRound() {
+    round++;
+    const max = round < 3 ? 40 : round < 6 ? 99 : round < 9 ? 199 : 349;
+    const min = Math.min(12 + round * 8, max - 10);
+    target = K.ri(min, max);
+    total = 0; caught = [];
+    roundTime = timeLeft = Math.max(14, 26 - round);
+    phase = 'play'; phaseT = 0;
+    K.float(400, 250, round === 1 ? 'Make ' + money(target) : 'Round ' + round + ': ' + money(target), '#ffd34d', 34);
+  }
+  const money = c => c >= 100 ? '$' + (c / 100).toFixed(2) : c + '¢';
+
+  function spawn() {
+    const need = target - total;
+    let pool = [1, 1, 5, 5, 10, 10];
+    if (round >= 2) pool.push(25, 25);
+    if (round >= 5) pool.push(100);
+    // Make sure useful coins show up: often drop one that fits.
+    const fits = pool.filter(v => v <= need);
+    const v = fits.length && Math.random() < 0.6 ? K.pick(fits) : K.pick(pool);
+    const t = TYPES[v];
+    coins.push({ v, x: K.rand(40, 760), y: -40, vy: K.rand(110, 150) + round * 9, spin: Math.random() * 6, sway: Math.random() * 6, r: t.r });
+  }
+
+  function bust(msg) {
+    lives--;
+    streak = 0;
+    K.shake(14); K.flash('#ff5d73', 0.35); K.sfx.boom();
+    for (const v of caught) K.burst(bx + K.rand(-40, 40), BASKET_Y - 10, TYPES[v].face, 6, 300);
+    K.float(bx, BASKET_Y - 90, msg, '#ff5d73', 34);
+    if (lives <= 0) {
+      phase = 'dead';
+      return K.gameOver(score, { msg: `You made it through <b>${round - 1}</b> round${round === 2 ? '' : 's'}.`, delay: 900 });
+    }
+    total = 0; caught = [];
+    timeLeft = roundTime;
+  }
+
+  function update(dt) {
+    if (K.keys.ArrowLeft) tbx -= 620 * dt;
+    if (K.keys.ArrowRight) tbx += 620 * dt;
+    tbx = K.clamp(tbx, BW / 2 + 10, 800 - BW / 2 - 10);
+    bx += (tbx - bx) * Math.min(1, dt * 16);
+    if (phase === 'dead') return;
+    if (phase === 'win') {
+      phaseT -= dt;
+      for (const c of coins) c.y += c.vy * dt * 2.5;
+      if (phaseT <= 0) { coins = []; nextRound(); }
+      return;
+    }
+    timeLeft -= dt;
+    if (timeLeft <= 0) { bust('Time!'); if (phase === 'dead') return; }
+    spawnT -= dt;
+    if (spawnT <= 0) { spawn(); spawnT = Math.max(0.32, 0.8 - round * 0.04) * K.rand(0.7, 1.3); }
+    for (let i = coins.length - 1; i >= 0; i--) {
+      if (phase !== 'play') break;
+      const c = coins[i];
+      c.y += c.vy * dt; c.spin += dt * 5; c.x += Math.sin(K.t * 2 + c.sway) * 20 * dt;
+      if (c.y > BASKET_Y - 30 && c.y < BASKET_Y + 6 && Math.abs(c.x - bx) < BW / 2 - 4) {
+        coins.splice(i, 1);
+        total += c.v; caught.push(c.v);
+        K.float(c.x, BASKET_Y - 60, '+' + TYPES[c.v].label, TYPES[c.v].face, 22);
+        if (total > target) { bust('Bust! ' + money(total)); continue; }
+        K.sfx.coin();
+        K.burst(c.x, BASKET_Y - 20, TYPES[c.v].face, 8, 140, 3);
+        if (total === target) win();
+      } else if (c.y > 640) coins.splice(i, 1);
+    }
+  }
+  function win() {
+    streak++;
+    const bonus = Math.round(timeLeft * 5) * streak;
+    score += target + bonus;
+    K.float(400, 260, 'Exact! +' + (target + bonus), '#7ee36b', 40);
+    if (streak > 1) K.float(400, 310, 'Streak ×' + streak, '#ffd34d', 26);
+    K.burst(bx, BASKET_Y - 40, '#ffd34d', 40, 380, 5); K.burst(bx, BASKET_Y - 40, '#7ee36b', 24, 260);
+    K.sfx.win(); K.shake(5);
+    phase = 'win'; phaseT = 1.3;
+  }
+
+  function drawCoin(c, x, y, v, spin) {
+    const t = TYPES[v], r = t.r, sx = Math.max(0.15, Math.abs(Math.cos(spin)));
+    c.save();
+    c.translate(x, y); c.scale(sx, 1);
+    c.shadowColor = v === 100 ? '#ffd34d' : 'rgba(255,255,255,.4)'; c.shadowBlur = v === 100 ? 18 : 8;
+    c.fillStyle = t.rim; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill();
+    c.shadowBlur = 0;
+    const g = c.createLinearGradient(-r, -r, r, r);
+    g.addColorStop(0, K.shade(t.face, 0.5)); g.addColorStop(0.5, t.face); g.addColorStop(1, K.shade(t.face, -0.25));
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, r - 3, 0, 7); c.fill();
+    c.strokeStyle = K.shade(t.face, -0.3); c.lineWidth = 1.2; c.beginPath(); c.arc(0, 0, r - 6, 0, 7); c.stroke();
+    if (sx > 0.45) K.text(t.label, 0, 1, r * (t.label.length > 2 ? 0.62 : 0.75), K.shade(t.rim, -0.35), { weight: 800, c });
+    c.restore();
+  }
+
+  function draw(c, t) {
+    if (!coins) {
+      for (let i = 0; i < 14; i++) {
+        const v = [1, 5, 10, 25, 100][i % 5];
+        drawCoin(c, (i * 137) % 760 + 20, ((t * 90 + i * 83) % 700) - 50, v, t * 3 + i);
+      }
+      return;
+    }
+    // falling coins
+    for (const co of coins) drawCoin(c, co.x, co.y, co.v, co.spin);
+    // basket glow column
+    const g = c.createLinearGradient(0, 200, 0, BASKET_Y);
+    g.addColorStop(0, 'rgba(255,211,77,0)'); g.addColorStop(1, 'rgba(255,211,77,.09)');
+    c.fillStyle = g; c.fillRect(bx - BW / 2, 200, BW, BASKET_Y - 200);
+    // coins inside basket
+    caught.slice(-9).forEach((v, i) => drawCoin(c, bx - 36 + (i % 5) * 18, BASKET_Y + 16 - Math.floor(i / 5) * 10, v, 0));
+    // basket
+    c.save();
+    c.shadowColor = '#ff9f43'; c.shadowBlur = 24;
+    const bg = c.createLinearGradient(0, BASKET_Y - 20, 0, BASKET_Y + 50);
+    bg.addColorStop(0, '#ffb347'); bg.addColorStop(1, '#a8551c');
+    c.fillStyle = bg;
+    c.beginPath();
+    c.moveTo(bx - BW / 2, BASKET_Y - 14); c.lineTo(bx + BW / 2, BASKET_Y - 14);
+    c.lineTo(bx + BW / 2 - 14, BASKET_Y + 44); c.lineTo(bx - BW / 2 + 14, BASKET_Y + 44); c.closePath();
+    c.globalAlpha = 0.9; c.fill(); c.restore();
+    c.strokeStyle = 'rgba(0,0,0,.25)'; c.lineWidth = 2;
+    for (let i = 1; i < 4; i++) { const yy = BASKET_Y - 14 + i * 14.5; c.beginPath(); c.moveTo(bx - BW / 2 + i * 3.5, yy); c.lineTo(bx + BW / 2 - i * 3.5, yy); c.stroke(); }
+    K.tile(c, bx - BW / 2 - 6, BASKET_Y - 22, BW + 12, 12, '#ffd34d', { r: 6, depth: 3 });
+    K.text(money(total), bx, BASKET_Y + 68, 20, total > target ? '#ff5d73' : '#fff', { weight: 800, glow: 10 });
+
+    // HUD
+    K.panel(c, 250, 16, 300, 78, { r: 18, glow: 24, glowColor: 'rgba(255,211,77,.3)' });
+    K.text('MAKE EXACTLY', 400, 34, 11, 'rgba(255,230,170,.8)');
+    K.text(money(target), 400, 66, 38, '#ffd34d', { weight: 800, glow: 16 });
+    const need = target - total;
+    K.chip(22, 16, 'In basket', money(total), '#fff', { w: 120, h: 56 });
+    K.chip(22, 82, 'Still need', money(Math.max(0, need)), '#7ee36b', { w: 120, h: 56 });
+    K.chip(778, 16, 'Score', score, '#ffd34d', { w: 120, h: 56, align: 'right' });
+    // lives
+    for (let i = 0; i < 3; i++) {
+      const on = i < lives;
+      K.text('♥', 690 + i * 30, 104, 24, on ? '#ff5d73' : 'rgba(255,255,255,.15)', { glow: on ? 12 : 0 });
+    }
+    // timer bar
+    const p = Math.max(0, timeLeft / roundTime);
+    K.rr(c, 250, 102, 300, 8, 4); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill();
+    K.rr(c, 250, 102, 300 * p, 8, 4); c.fillStyle = p < 0.25 ? '#ff5d73' : '#ffd34d';
+    c.save(); c.shadowColor = c.fillStyle; c.shadowBlur = 10; c.fill(); c.restore();
+  }
+})();
+</script>
+</body>
+</html>

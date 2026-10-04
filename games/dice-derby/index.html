@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dice Derby</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const STEPS = 6, RACES = 8, LANE_H = 37, TOP = 122, TX0 = 214, TX1 = 690;
+  const COLORS = ['#ff5d73', '#ff7d5d', '#ff9f43', '#ffd34d', '#b8e05a', '#7ee36b', '#2ee6c5', '#4fd1ff', '#6b8cff', '#a66bff', '#ff6bd6'];
+  const WAYS = n => 6 - Math.abs(7 - n);
+
+  // Chance each horse wins a race (simulated once).
+  const WIN = (() => {
+    const w = Array(13).fill(0), N = 30000;
+    for (let i = 0; i < N; i++) {
+      const pos = Array(13).fill(0);
+      while (true) { const s = 2 + Math.floor(Math.random() * 6) + Math.floor(Math.random() * 6); if (++pos[s] >= STEPS) { w[s]++; break; } }
+    }
+    return w.map(v => v / N);
+  })();
+
+  let chips, race, bets, odds, pos, hop, phase, rollT, dice, rolled, tally, winner, lastWin, history;
+  const goBtn = { x: 470, y: 548, w: 200, h: 44, label: 'Start race!', size: 18, color: '#ffd34d' };
+  const clearBtn = { x: 330, y: 548, w: 124, h: 44, label: 'Clear bets', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'dice-derby', title: 'Dice Derby', accent: '#ffd34d', accent2: '#7ee36b', bg: ['#0d1a10', '#1a1030'],
+    tagline: 'Eleven racers, two dice. Each roll moves the racer whose number matches the sum.',
+    how: [
+      'Tap a lane to bet 10 chips on that racer. Spread your bets however you like.',
+      'Each roll of two dice moves one racer: roll 3 + 4 and racer <b>7</b> steps forward.',
+      'Some sums are more likely than others. Odds pay more for long shots.',
+      'Hunt for <b>value</b>: the odds change every race. Finish 8 races with as many chips as you can.',
+    ],
+    start, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (phase === 'bet') {
+        if (K.hit(goBtn, x, y)) return go();
+        if (K.hit(clearBtn, x, y)) { chips += bets.reduce((a, b) => a + b, 0); bets.fill(0); K.sfx.whoosh(); return; }
+        const lane = Math.floor((y - TOP) / LANE_H);
+        if (lane >= 0 && lane < 11 && x < 760) bet(lane + 2);
+      } else if (phase === 'done' && K.hit(goBtn, x, y)) nextRace();
+    },
+    key(k) { if (K.state === 'play' && (k === ' ' || k === 'Enter')) { if (phase === 'bet') go(); else if (phase === 'done') nextRace(); } },
+  });
+
+  function start() { chips = 100; race = 0; history = []; nextRace(); }
+  function nextRace() {
+    race++;
+    if (race > RACES || chips <= 0) return finish();
+    bets = Array(13).fill(0); pos = Array(13).fill(0); hop = Array(13).fill(0); tally = Array(13).fill(0); rolled = 0;
+    // fair odds would be 1/p; bookie shades them randomly so some bets are good value
+    odds = WIN.map((p, n) => n < 2 ? 0 : Math.min(60, Math.max(1.2, Math.round((1 / Math.max(p, 0.002)) * K.rand(0.75, 1.3) * 2) / 2)));
+    phase = 'bet'; winner = 0; dice = [K.ri(1, 6), K.ri(1, 6)];
+    goBtn.label = 'Start race!';
+  }
+  function bet(n) {
+    if (chips < 10) { K.sfx.bad(); return; }
+    chips -= 10; bets[n] += 10;
+    K.sfx.coin();
+    K.float(TX0 - 70, TOP + (n - 2) * LANE_H + 18, '+10', '#ffd34d', 16);
+  }
+  function go() {
+    if (!bets.some(Boolean)) { K.float(400, 520, 'Place a bet first: tap a lane!', '#ffd34d', 20); K.sfx.bad(); return; }
+    phase = 'race'; rollT = 0.3; K.sfx.whoosh();
+  }
+  function finish() {
+    phase = 'over';
+    const score = Math.max(0, chips);
+    K.gameOver(score, { title: chips > 100 ? 'Big winner!' : chips > 0 ? 'Not bad!' : 'Busted', kicker: 'Final chips', msg: `You started with 100 chips. Winners: ${history.join(', ') || 'none'}.` });
+  }
+
+  function update(dt) {
+    for (let n = 2; n <= 12; n++) hop[n] = Math.max(0, hop[n] - dt * 3);
+    if (phase !== 'race') return;
+    rollT -= dt;
+    if (rollT > 0) return;
+    rollT = Math.max(0.16, 0.42 - rolled * 0.006);
+    dice = [K.ri(1, 6), K.ri(1, 6)];
+    const s = dice[0] + dice[1];
+    rolled++; tally[s]++;
+    pos[s]++; hop[s] = 1;
+    K.sfx.note(300 + s * 40, 0.05);
+    if (pos[s] >= STEPS) {
+      winner = s; phase = 'done';
+      const won = Math.round(bets[s] * odds[s]);
+      history.push(s);
+      chips += won;
+      lastWin = won;
+      const y = TOP + (s - 2) * LANE_H + LANE_H / 2;
+      K.burst(TX1, y, COLORS[s - 2], 40, 360, 5); K.burst(TX1, y, '#fff', 14, 200);
+      if (won) { K.float(400, 90, `Racer ${s} wins! You win ${won} chips`, '#7ee36b', 26); K.sfx.win(); }
+      else { K.float(400, 90, `Racer ${s} wins!`, '#ffd34d', 26); K.sfx.lose(); }
+      goBtn.label = race >= RACES || chips <= 0 ? 'See results' : 'Next race';
+    }
+  }
+
+  function drawDie(c, x, y, v, rot) {
+    c.save(); c.translate(x, y); c.rotate(rot);
+    K.tile(c, -22, -22, 44, 44, '#f4f6ff', { r: 9, depth: 4, glow: 12 });
+    c.fillStyle = '#1a1d33';
+    const P = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] }[v];
+    for (const [px, py] of P) { c.beginPath(); c.arc(px * 11, py * 11, 4.2, 0, 7); c.fill(); }
+    c.restore();
+  }
+
+  function draw(c, t) {
+    const live = !!pos;
+    // lanes
+    for (let n = 2; n <= 12; n++) {
+      const y = TOP + (n - 2) * LANE_H, col = COLORS[n - 2];
+      c.fillStyle = (n % 2) ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,.06)';
+      c.fillRect(20, y, 760, LANE_H - 2);
+      // step marks
+      for (let s = 1; s < STEPS; s++) { const x = TX0 + (TX1 - TX0) * s / STEPS; c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(x - 1, y + 6, 2, LANE_H - 14); }
+      // label
+      K.tile(c, 26, y + 4, 36, LANE_H - 10, col, { r: 7, depth: 2, glow: winner === n ? 20 : 0 });
+      K.text(String(n), 44, y + LANE_H / 2 - 1, 16, '#0b0e1c', { weight: 800 });
+      K.text(`${WAYS(n)}/36`, 92, y + LANE_H / 2 - 1, 12, 'rgba(220,228,250,.7)', { weight: 600 });
+      if (live) {
+        K.text('×' + odds[n], 140, y + LANE_H / 2 - 1, 14, '#ffd34d', { weight: 800 });
+        if (bets[n]) { K.orb(c, 182, y + LANE_H / 2, 12, '#ffd34d', { glow: 8 }); K.text(String(bets[n]), 182, y + LANE_H / 2, 10, '#3a2a00', { weight: 800 }); }
+      }
+      // racer
+      const p = live ? pos[n] : Math.floor((Math.sin(t * 0.8 + n) * 0.5 + 0.5) * STEPS);
+      const rx = TX0 + (TX1 - TX0) * Math.min(p, STEPS) / STEPS, ry = y + LANE_H / 2 - (live ? Math.sin(hop[n] * Math.PI) * 8 : 0);
+      if (live && p > 0) { const g = c.createLinearGradient(TX0, 0, rx, 0); g.addColorStop(0, K.alpha(col, 0)); g.addColorStop(1, K.alpha(col, 0.45)); c.fillStyle = g; c.fillRect(TX0, y + LANE_H / 2 - 3, rx - TX0, 6); }
+      K.orb(c, rx, ry, 13, col, { glow: winner === n ? 30 : 12 });
+      K.text(String(n), rx, ry + 1, 12, '#0b0e1c', { weight: 800 });
+    }
+    // finish line
+    for (let k = 0; k < 22; k++) { c.fillStyle = k % 2 ? '#fff' : '#1a1d33'; c.fillRect(TX1 + 16, TOP + k * (LANE_H * 11 / 22), 8, LANE_H * 11 / 22); }
+    // roll tally (bar of how often each sum came up this race)
+    if (live && rolled) {
+      const max = Math.max(...tally);
+      for (let n = 2; n <= 12; n++) {
+        const y = TOP + (n - 2) * LANE_H, w = 40 * tally[n] / max;
+        c.fillStyle = K.alpha(COLORS[n - 2], 0.55); c.fillRect(732, y + 8, w, LANE_H - 18);
+        K.text(String(tally[n]), 778, y + LANE_H / 2 - 1, 10, 'rgba(255,255,255,.6)', { align: 'right' });
+      }
+    }
+    K.text('ROLLS', 755, TOP - 10, 9, 'rgba(220,228,250,.55)');
+    K.text('ODDS', 140, TOP - 10, 9, 'rgba(220,228,250,.55)');
+    K.text('CHANCE', 92, TOP - 10, 9, 'rgba(220,228,250,.55)');
+    if (!live) return;
+    // dice + HUD
+    const spin = phase === 'race' ? Math.sin(t * 30) * 0.15 : 0;
+    drawDie(c, 372, 54, dice[0], spin); drawDie(c, 428, 54, dice[1], -spin);
+    K.text('= ' + (dice[0] + dice[1]), 486, 56, 24, '#fff', { weight: 800, align: 'left' });
+    K.chip(22, 18, 'Chips', chips, '#ffd34d', { w: 120, h: 54, size: 22 });
+    K.chip(152, 18, 'Race', `${race} / ${RACES}`, '#fff', { w: 100, h: 54 });
+    K.chip(778, 18, 'On the line', bets.reduce((a, b) => a + b, 0), '#7ee36b', { w: 130, h: 54, align: 'right' });
+    if (phase === 'bet') {
+      K.text('Tap lanes to bet 10 chips each', 170, 570, 13, 'rgba(220,228,250,.7)');
+      K.button(clearBtn); K.button(goBtn);
+    } else if (phase === 'done') K.button(goBtn);
+    else K.text(`Roll #${rolled}`, 400, 570, 14, 'rgba(220,228,250,.7)');
+  }
+})();
+</script>
+</body>
+</html>

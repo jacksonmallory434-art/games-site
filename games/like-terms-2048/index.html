@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Like Terms 2048</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const N = 4, CELL = 88, GAP = 10, BS = N * CELL + (N + 1) * GAP, BX = (800 - BS) / 2, BY = 104;
+  // variable parts, in unlock order
+  const VARS = [
+    { v: '', color: '#8a94b8', at: 0 },
+    { v: 'x', color: '#4fd1ff', at: 0 },
+    { v: 'y', color: '#7ee36b', at: 150 },
+    { v: 'x²', color: '#a66bff', at: 450 },
+    { v: 'xy', color: '#ff9f43', at: 900 },
+  ];
+  let grid, tiles, score, moves, zeroes, touch, busy, unlocked;
+
+  const K = window.K = MA.game({
+    slug: 'like-terms-2048', title: 'Like Terms 2048', accent: '#a66bff', accent2: '#4fd1ff', bg: ['#120a2a', '#071a2a'],
+    tagline: 'Slide algebra tiles together. Only like terms combine!',
+    how: [
+      'Swipe or use the arrow keys to slide every tile.',
+      '<b>Like terms</b> combine when they meet: 3x + 2x = 5x. But x and x² never mix.',
+      'Opposites cancel: 4y + (−4y) = 0, and both tiles vanish for a big bonus.',
+      'New kinds of terms show up as your score grows. You lose when the board jams.',
+    ],
+    start, update, draw,
+    down(x, y) { touch = [x, y]; },
+    up(x, y) {
+      if (!touch || K.state !== 'play') return;
+      const dx = x - touch[0], dy = y - touch[1];
+      touch = null;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+      Math.abs(dx) > Math.abs(dy) ? move(dx > 0 ? 1 : 3) : move(dy > 0 ? 2 : 0);
+    },
+    key(k) {
+      if (K.state !== 'play') return;
+      const m = { ArrowUp: 0, w: 0, W: 0, ArrowRight: 1, d: 1, D: 1, ArrowDown: 2, s: 2, S: 2, ArrowLeft: 3, a: 3, A: 3 }[k];
+      if (m != null) move(m);
+    },
+  });
+
+  const px = c => BX + GAP + c * (CELL + GAP);
+  const py = r => BY + GAP + r * (CELL + GAP);
+  const varInfo = v => VARS.find(o => o.v === v);
+  function termText(coef, v) {
+    const s = coef < 0 ? '−' : '';
+    const a = Math.abs(coef);
+    return s + (v && a === 1 ? '' : a) + v;
+  }
+
+  function start() {
+    grid = Array.from({ length: N }, () => Array(N).fill(null));
+    tiles = []; score = 0; moves = 0; zeroes = 0; busy = 0; unlocked = 2;
+    spawn(); spawn();
+  }
+
+  function spawn() {
+    const empty = [];
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!grid[r][c]) empty.push([r, c]);
+    if (!empty.length) return;
+    const [r, c] = K.pick(empty);
+    const avail = VARS.slice(0, unlocked);
+    const v = K.pick(avail).v;
+    const coef = K.pick([1, 1, 2, 2, 3, -1, -1, -2]);
+    const t = { coef, v, r, c, x: px(c), y: py(r), s: 0, pop: 0 };
+    grid[r][c] = t; tiles.push(t);
+  }
+
+  function move(dir) {
+    if (busy > 0) return;
+    // dir: 0 up, 1 right, 2 down, 3 left
+    const dr = [-1, 0, 1, 0][dir], dc = [0, 1, 0, -1][dir];
+    let moved = false, gained = 0, merges = 0, zeroed = 0;
+    const order = [...Array(N).keys()];
+    if (dr === 1 || dc === 1) order.reverse();
+    const merged = new Set();
+    for (const a of order) for (const b of order) {
+      const r = dr ? a : b, c = dr ? b : a;
+      const t = grid[r][c];
+      if (!t) continue;
+      let nr = r, nc = c;
+      while (true) {
+        const tr = nr + dr, tc = nc + dc;
+        if (tr < 0 || tr >= N || tc < 0 || tc >= N) break;
+        const o = grid[tr][tc];
+        if (!o) { nr = tr; nc = tc; continue; }
+        if (o.v === t.v && !merged.has(o)) {
+          // combine like terms
+          grid[r][c] = null;
+          o.coef += t.coef;
+          t.r = tr; t.c = tc; t.dead = true; t.into = o;
+          merged.add(o);
+          o.pop = 1;
+          merges++;
+          if (o.coef === 0) { grid[tr][tc] = null; o.zero = true; zeroed++; gained += 40; }
+          else gained += Math.abs(o.coef) * (o.v ? VARS.indexOf(varInfo(o.v)) + 1 : 1);
+          moved = true;
+          nr = null;
+        }
+        break;
+      }
+      if (nr === null) continue;
+      if (nr !== r || nc !== c) { grid[r][c] = null; grid[nr][nc] = t; t.r = nr; t.c = nc; moved = true; }
+    }
+    if (!moved) { K.sfx.tick(); return; }
+    moves++;
+    score += gained; zeroes += zeroed;
+    busy = 0.13;
+    K.sfx.whoosh();
+    setTimeout(() => {
+      for (const t of tiles) if (t.pop === 1) {
+        const x = px(t.c) + CELL / 2, y = py(t.r) + CELL / 2;
+        if (t.zero) { K.burst(x, y, '#ffd34d', 30, 320, 5); K.float(x, y, '0! +40', '#ffd34d', 30); K.sfx.win(); K.shake(6); }
+        else { K.burst(x, y, varInfo(t.v).color, 12, 200); K.sfx.pop(); }
+      }
+    }, 110);
+    const before = unlocked;
+    while (unlocked < VARS.length && score >= VARS[unlocked].at) unlocked++;
+    if (unlocked > before) setTimeout(() => K.float(400, 108, `New term: ${VARS[unlocked - 1].v}`, VARS[unlocked - 1].color, 26), 200);
+  }
+
+  function canMove() {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      const t = grid[r][c];
+      if (!t) return true;
+      for (const [dr, dc] of [[0, 1], [1, 0]]) { const o = grid[r + dr] && grid[r + dr][c + dc]; if (o && o.v === t.v) return true; }
+    }
+    return false;
+  }
+
+  function update(dt) {
+    if (busy > 0) {
+      busy -= dt;
+      if (busy <= 0) {
+        tiles = tiles.filter(t => !t.dead && !t.zero);
+        spawn();
+        if (Math.random() < 0.25 && moves > 10) spawn();
+        if (!canMove()) K.gameOver(score, { msg: `${moves} moves, <b>${zeroes}</b> zero pairs cancelled.` });
+      }
+    }
+    for (const t of tiles) {
+      const tx = px(t.c), ty = py(t.r);
+      t.x += (tx - t.x) * Math.min(1, dt * 22); t.y += (ty - t.y) * Math.min(1, dt * 22);
+      t.s = Math.min(1, t.s + dt * 6);
+      if (t.pop && !t.dead) t.pop = Math.max(0, t.pop - dt * 4);
+    }
+  }
+
+  function drawTile(c, t) {
+    const info = varInfo(t.v), neg = t.coef < 0;
+    let s = K.back(t.s);
+    if (t.pop && !t.dead) s *= 1 + Math.sin((1 - t.pop) * Math.PI) * 0.12;
+    const w = CELL * s, x = t.x + (CELL - w) / 2, y = t.y + (CELL - w) / 2;
+    const col = neg ? K.shade(info.color, -0.35) : info.color;
+    K.tile(c, x, y, w, w, col, { r: 14 * s, glow: t.pop ? 24 : 0, depth: 5 });
+    if (neg) {
+      c.save(); K.rr(c, x, y, w, w, 14 * s); c.clip();
+      c.strokeStyle = 'rgba(0,0,0,.14)'; c.lineWidth = 6;
+      for (let k = -w; k < w * 2; k += 16) { c.beginPath(); c.moveTo(x + k, y); c.lineTo(x + k - w, y + w); c.stroke(); }
+      c.restore();
+    }
+    const txt = termText(t.coef, t.v);
+    const size = (txt.length > 4 ? 26 : txt.length > 3 ? 32 : 38) * s;
+    K.text(txt, x + w / 2, y + w / 2 + 2, size, '#fff', { weight: 800, stroke: 5, strokeColor: 'rgba(0,0,0,.28)' });
+  }
+
+  function boardExpr() {
+    const sums = {};
+    for (const t of tiles) if (!t.dead && !t.zero) sums[t.v] = (sums[t.v] || 0) + t.coef;
+    const parts = VARS.slice().reverse().map(o => o.v).filter(v => sums[v]).map(v => [sums[v], v]);
+    if (!parts.length) return '0';
+    return parts.map(([coef, v], i) => {
+      const a = Math.abs(coef), body = (v && a === 1 ? '' : a) + v;
+      return i ? (coef < 0 ? ' − ' : ' + ') + body : (coef < 0 ? '−' : '') + body;
+    }).join('');
+  }
+
+  function draw(c, t) {
+    K.panel(c, BX - 6, BY - 6, BS + 12, BS + 12, { r: 22, fill: 'rgba(8,8,26,.75)', glow: 30, glowColor: 'rgba(166,107,255,.3)' });
+    for (let r = 0; r < N; r++) for (let cc = 0; cc < N; cc++) { c.fillStyle = 'rgba(255,255,255,.045)'; K.rr(c, px(cc), py(r), CELL, CELL, 14); c.fill(); }
+    if (!tiles) {
+      const demo = [[0, 0, 3, 'x'], [0, 1, 2, 'x'], [1, 2, -1, 'y'], [2, 1, 2, 'x²'], [3, 3, 4, ''], [2, 3, 1, 'y'], [1, 0, -2, '']];
+      for (const [r, cc, coef, v] of demo) drawTile(c, { r, c: cc, x: px(cc), y: py(r) + Math.sin(t * 2 + r + cc) * 2, s: 1, coef, v });
+      return;
+    }
+    for (const tl of tiles) if (tl.dead) drawTile(c, tl);
+    for (const tl of tiles) if (!tl.dead) drawTile(c, tl);
+
+    K.chip(BX - 6, 22, 'Score', score, '#ffd34d', { w: 130, h: 54 });
+    K.chip(BX + 134, 22, 'Best', Math.max(score, K.best()), '#a66bff', { w: 110, h: 54 });
+    K.chip(BX + BS + 6, 22, 'Zero pairs', zeroes, '#ffd34d', { w: 110, h: 54, align: 'right' });
+    // whole-board expression
+    const ex = boardExpr();
+    K.panel(c, BX - 6, BY + BS + 16, BS + 12, 44, { r: 14 });
+    K.text('BOARD =', BX + 46, BY + BS + 38, 11, 'rgba(220,228,250,.6)');
+    K.text(ex, BX + BS / 2 + 40, BY + BS + 39, ex.length > 22 ? 16 : 20, '#fff', { weight: 700 });
+    // legend
+    VARS.forEach((o, i) => {
+      const y = BY + 20 + i * 44, on = i < unlocked;
+      K.tile(c, 40, y, 34, 34, on ? o.color : '#2a2f45', { r: 8, depth: 3 });
+      K.text(o.v || '1', 57, y + 18, 15, on ? '#fff' : 'rgba(255,255,255,.3)', { weight: 800 });
+      K.text(on ? (o.v ? o.v + ' terms' : 'numbers') : `at ${o.at} pts`, 84, y + 18, 12, on ? 'rgba(230,236,255,.75)' : 'rgba(230,236,255,.3)', { align: 'left' });
+    });
+  }
+})();
+</script>
+</body>
+</html>

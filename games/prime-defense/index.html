@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prime Defense</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const PATH = [[-30, 150], [180, 150], [180, 340], [400, 340], [400, 150], [620, 150], [620, 480], [150, 480], [150, 640]];
+  const PADS = [[90, 245], [275, 245], [290, 420], [500, 245], [505, 410], [720, 300], [720, 420], [420, 410], [60, 400], [300, 90], [520, 70], [720, 120]];
+  const TOWERS = {
+    2: { cost: 40, color: '#4fd1ff', rate: 0.55, range: 120 },
+    3: { cost: 60, color: '#7ee36b', rate: 0.7, range: 120 },
+    5: { cost: 80, color: '#ffd34d', rate: 0.8, range: 125 },
+    7: { cost: 110, color: '#ff9f43', rate: 0.9, range: 130 },
+    11: { cost: 150, color: '#ff6bd6', rate: 1.0, range: 135 },
+  };
+  const WAVES = 15;
+  // segment lengths for path position -> point
+  const SEG = []; let PLEN = 0;
+  for (let i = 1; i < PATH.length; i++) { const l = Math.hypot(PATH[i][0] - PATH[i - 1][0], PATH[i][1] - PATH[i - 1][1]); SEG.push(l); PLEN += l; }
+  function at(d) {
+    for (let i = 0; i < SEG.length; i++) {
+      if (d <= SEG[i]) { const k = d / SEG[i]; return [PATH[i][0] + (PATH[i + 1][0] - PATH[i][0]) * k, PATH[i][1] + (PATH[i + 1][1] - PATH[i][1]) * k]; }
+      d -= SEG[i];
+    }
+    return PATH[PATH.length - 1];
+  }
+
+  let towers, enemies, bolts, coins, lives, wave, spawnQ, spawnT, waveOn, sel, kills, speed, msg;
+  const speedBtn = { x: 610, y: 548, w: 110, h: 40, label: '▶▶ 1×', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+  const waveBtn = { x: 22, y: 548, w: 190, h: 40, label: 'Send wave 1', size: 15 };
+
+  const K = window.K = MA.game({
+    slug: 'prime-defense', title: 'Prime Defense', accent: '#ff6bd6', accent2: '#4fd1ff', bg: ['#130b2a', '#071a2c'],
+    tagline: 'Number monsters are marching in. Build prime towers to divide them down to 1.',
+    how: [
+      'Tap a glowing pad to build a <b>2</b>, <b>3</b>, <b>5</b>, <b>7</b> or <b>11</b> tower.',
+      'A tower can only hit monsters its prime divides. A 3-tower turns 12 into 4.',
+      'A monster at <b>1</b> is destroyed. Think about each number\'s prime factors!',
+      'Survive 15 waves. Each monster that gets through costs a life.',
+    ],
+    start, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(speedBtn, x, y)) { speed = speed === 1 ? 2 : 1; speedBtn.label = '▶▶ ' + speed + '×'; K.sfx.click(); return; }
+      if (!waveOn && K.hit(waveBtn, x, y)) { sendWave(); return; }
+      if (sel != null) {
+        for (const o of menuOpts()) if (Math.hypot(x - o.x, y - o.y) < 24) { o.act(); sel = null; return; }
+      }
+      const pi = PADS.findIndex(([px, py]) => Math.hypot(x - px, y - py) < 26);
+      sel = pi >= 0 && pi !== sel ? pi : null;
+      if (sel != null) K.sfx.tick();
+    },
+  });
+
+  function start() {
+    towers = {}; enemies = []; bolts = []; coins = 120; lives = 20; wave = 0; spawnQ = []; spawnT = 0; waveOn = false; sel = null; kills = 0; speed = 1;
+    speedBtn.label = '▶▶ 1×'; waveBtn.label = 'Send wave 1';
+    msg = { text: 'Build a 2-tower, then send the wave!', t: 5 };
+  }
+
+  function poolFor(w) { return w < 2 ? [2] : w < 5 ? [2, 3] : w < 8 ? [2, 3, 5] : w < 11 ? [2, 3, 5, 7] : [2, 3, 5, 7, 11]; }
+  function sendWave() {
+    wave++;
+    waveOn = true;
+    const pool = poolFor(wave), n = 5 + wave * 2, maxK = Math.min(5, 1 + Math.floor(wave / 3));
+    spawnQ = [];
+    for (let i = 0; i < n; i++) {
+      let v = 1;
+      const k = K.ri(1, maxK);
+      for (let j = 0; j < k; j++) { const p = K.pick(pool); if (v * p <= 600) v *= p; }
+      if (v === 1) v = pool[0];
+      spawnQ.push(v);
+    }
+    const fresh = { 2: 2, 5: 5, 8: 7, 11: 11 }[wave];
+    msg = { text: fresh ? `Wave ${wave}: watch out, multiples of ${fresh} are coming!` : `Wave ${wave}`, t: 3 };
+    spawnT = 0.5;
+    K.sfx.whoosh();
+  }
+
+  function menuOpts() {
+    const [px, py] = PADS[sel], t = towers[sel], out = [];
+    if (t) {
+      out.push({ x: px, y: py - 52, label: '$', sub: '+' + Math.floor(TOWERS[t.p].cost / 2), color: '#ff5d73', act: () => { coins += Math.floor(TOWERS[t.p].cost / 2); delete towers[sel]; K.sfx.coin(); } });
+      return out;
+    }
+    const ps = Object.keys(TOWERS).map(Number);
+    ps.forEach((p, i) => {
+      const a = -Math.PI / 2 + (i - (ps.length - 1) / 2) * 0.62;
+      const ox = K.clamp(px + Math.cos(a) * 64, 26, 774), oy = K.clamp(py + Math.sin(a) * 64, 26, 574);
+      const T = TOWERS[p];
+      out.push({ x: ox, y: oy, label: String(p), sub: '$' + T.cost, color: T.color, off: coins < T.cost,
+        act: () => { if (coins < T.cost) { K.sfx.bad(); return; } coins -= T.cost; towers[sel] = { p, cd: 0, ang: -Math.PI / 2, pulse: 0 }; K.sfx.good(); K.burst(px, py, T.color, 16, 200); } });
+    });
+    return out;
+  }
+
+  function update(dt) {
+    dt *= speed;
+    if (msg && msg.t > 0) msg.t -= dt / speed;
+    // spawn
+    if (spawnQ.length) {
+      spawnT -= dt;
+      if (spawnT <= 0) {
+        const v = spawnQ.shift();
+        enemies.push({ v, pend: v, d: 0, sp: 34 + wave * 2.2 + K.rand(-3, 3), hit: 0, wob: Math.random() * 6 });
+        spawnT = Math.max(0.55, 1.4 - wave * 0.05);
+      }
+    }
+    // enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      e.d += e.sp * dt; e.hit = Math.max(0, e.hit - dt * 3);
+      if (e.d >= PLEN) {
+        enemies.splice(i, 1);
+        lives--; K.shake(8); K.flash('#ff5d73', 0.2); K.sfx.bad();
+        if (lives <= 0) { lives = 0; return K.gameOver(score(), { msg: `You held out until wave <b>${wave}</b> and destroyed <b>${kills}</b> monsters.` }); }
+      }
+    }
+    // towers
+    for (const k in towers) {
+      const t = towers[k], T = TOWERS[t.p], [tx, ty] = PADS[k];
+      t.cd -= dt; t.pulse = Math.max(0, t.pulse - dt * 4);
+      let best = null;
+      for (const e of enemies) {
+        if (e.pend % t.p) continue;
+        const [ex, ey] = at(e.d);
+        if (Math.hypot(ex - tx, ey - ty) > T.range) continue;
+        if (!best || e.d > best.d) best = e;
+      }
+      if (best) {
+        const [ex, ey] = at(best.d);
+        const want = Math.atan2(ey - ty, ex - tx);
+        t.ang += Math.atan2(Math.sin(want - t.ang), Math.cos(want - t.ang)) * Math.min(1, dt * 12);
+        if (t.cd <= 0) {
+          t.cd = T.rate; t.pulse = 1;
+          best.pend /= t.p;
+          bolts.push({ x: tx + Math.cos(t.ang) * 20, y: ty + Math.sin(t.ang) * 20, e: best, p: t.p, color: T.color });
+          K.sfx.note(300 + t.p * 60, 0.06);
+        }
+      }
+    }
+    // bolts
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i];
+      if (!enemies.includes(b.e)) { bolts.splice(i, 1); continue; }
+      const [ex, ey] = at(b.e.d), dx = ex - b.x, dy = ey - b.y, dd = Math.hypot(dx, dy), st = 520 * dt;
+      if (dd <= st) {
+        bolts.splice(i, 1);
+        const e = b.e;
+        e.v /= b.p; e.hit = 1;
+        K.float(ex, ey - 26, '÷' + b.p, b.color, 18);
+        if (e.v === 1) {
+          enemies.splice(enemies.indexOf(e), 1);
+          kills++;
+          const reward = 6 + wave;
+          coins += reward;
+          K.burst(ex, ey, '#ff6bd6', 22, 260); K.burst(ex, ey, b.color, 12, 180);
+          K.float(ex, ey - 6, '+$' + reward, '#ffd34d', 18);
+          K.sfx.pop();
+        } else K.burst(ex, ey, b.color, 6, 120, 3);
+      } else { b.x += dx / dd * st; b.y += dy / dd * st; }
+    }
+    // wave end
+    if (waveOn && !spawnQ.length && !enemies.length) {
+      waveOn = false;
+      const bonus = 20 + wave * 5;
+      coins += bonus;
+      if (wave >= WAVES) return K.gameOver(score() + lives * 50, { title: 'You won!', kicker: 'Base defended', msg: `All 15 waves cleared with <b>${lives}</b> lives left.` });
+      msg = { text: `Wave cleared! +$${bonus}`, t: 2.5 };
+      waveBtn.label = 'Send wave ' + (wave + 1);
+      K.sfx.win();
+    }
+  }
+  const score = () => kills * 10 + (wave - (waveOn ? 1 : 0)) * 100;
+
+  function drawPath(c) {
+    c.save();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    const pts = () => { c.beginPath(); PATH.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); };
+    pts(); c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 56; c.stroke();
+    pts(); c.strokeStyle = '#1c2246'; c.lineWidth = 46; c.stroke();
+    pts(); c.strokeStyle = 'rgba(255,107,214,.35)'; c.lineWidth = 48; c.shadowColor = '#ff6bd6'; c.shadowBlur = 18; c.globalCompositeOperation = 'source-over';
+    c.lineWidth = 2; c.stroke();
+    c.shadowBlur = 0;
+    pts(); c.setLineDash([10, 14]); c.lineDashOffset = -K.t * 30; c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 2; c.stroke();
+    c.restore();
+    // exit portal
+    K.orb(c, 150, 588, 22, '#ff5d73', { glow: 30 });
+  }
+
+  function draw(c, t) {
+    drawPath(c);
+    // pads
+    PADS.forEach(([x, y], i) => {
+      const tw = towers && towers[i];
+      if (!tw) {
+        c.save();
+        c.strokeStyle = sel === i ? '#fff' : 'rgba(79,209,255,.45)'; c.lineWidth = 2;
+        c.shadowColor = '#4fd1ff'; c.shadowBlur = sel === i ? 18 : 8;
+        c.beginPath();
+        for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.PI / 6; c.lineTo(x + Math.cos(a) * 22, y + Math.sin(a) * 22); }
+        c.closePath(); c.fillStyle = 'rgba(79,209,255,.07)'; c.fill(); c.stroke();
+        c.restore();
+        K.text('+', x, y + 1, 18, 'rgba(160,230,255,.6)');
+      }
+    });
+    if (!towers) return;
+    // tower ranges for selected
+    if (sel != null && towers[sel]) {
+      const [x, y] = PADS[sel], T = TOWERS[towers[sel].p];
+      c.fillStyle = K.alpha(T.color, 0.08); c.strokeStyle = K.alpha(T.color, 0.4);
+      c.beginPath(); c.arc(x, y, T.range, 0, 7); c.fill(); c.stroke();
+    }
+    // enemies
+    for (const e of enemies) {
+      const [x, y] = at(e.d);
+      const r = 13 + Math.min(14, Math.log2(e.v) * 2.4);
+      const wob = Math.sin(t * 6 + e.wob) * 1.5;
+      c.save();
+      c.shadowColor = e.hit ? '#fff' : '#a66bff'; c.shadowBlur = 16 + e.hit * 20;
+      const g = c.createRadialGradient(x - r * 0.3, y - r * 0.4, 2, x, y, r + wob);
+      g.addColorStop(0, '#f3c4ff'); g.addColorStop(0.5, e.hit ? '#ffffff' : '#a66bff'); g.addColorStop(1, '#4b1d8f');
+      c.fillStyle = g;
+      c.beginPath();
+      for (let k = 0; k <= 16; k++) { const a = k / 16 * Math.PI * 2, rr = r + wob * Math.sin(a * 3 + t * 4); c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+      c.fill(); c.restore();
+      // eyes
+      c.fillStyle = '#fff';
+      c.beginPath(); c.arc(x - r * 0.32, y - r * 0.38, r * 0.17, 0, 7); c.arc(x + r * 0.32, y - r * 0.38, r * 0.17, 0, 7); c.fill();
+      c.fillStyle = '#1a0b33';
+      c.beginPath(); c.arc(x - r * 0.28, y - r * 0.36, r * 0.08, 0, 7); c.arc(x + r * 0.36, y - r * 0.36, r * 0.08, 0, 7); c.fill();
+      K.text(String(e.v), x, y + r * 0.2, Math.max(13, r * 0.75), '#fff', { weight: 800, stroke: 4, strokeColor: '#2a0f55' });
+    }
+    // towers
+    for (const k in towers) {
+      const tw = towers[k], T = TOWERS[tw.p], [x, y] = PADS[k];
+      const idle = !enemies.some(e => e.pend % tw.p === 0);
+      c.save();
+      c.shadowColor = T.color; c.shadowBlur = 14 + tw.pulse * 20;
+      c.beginPath();
+      for (let j = 0; j < 6; j++) { const a = j * Math.PI / 3 + Math.PI / 6; c.lineTo(x + Math.cos(a) * 25, y + Math.sin(a) * 25); }
+      c.closePath();
+      const g = c.createLinearGradient(x, y - 25, x, y + 25); g.addColorStop(0, K.shade(T.color, 0.2)); g.addColorStop(1, K.shade(T.color, -0.45));
+      c.fillStyle = g; c.fill();
+      c.restore();
+      // barrel
+      c.save(); c.translate(x, y); c.rotate(tw.ang);
+      c.fillStyle = K.shade(T.color, -0.55); K.rr(c, 4, -5, 22 - tw.pulse * 5, 10, 4); c.fill();
+      c.restore();
+      c.fillStyle = 'rgba(8,10,24,.85)'; c.beginPath(); c.arc(x, y, 15, 0, 7); c.fill();
+      K.text(String(tw.p), x, y + 1, 18, idle ? K.alpha(T.color, 0.6) : T.color, { weight: 800, glow: idle ? 0 : 10 });
+    }
+    // bolts
+    for (const b of bolts) { K.orb(c, b.x, b.y, 5, b.color, { glow: 14 }); }
+    // build menu
+    if (sel != null) {
+      for (const o of menuOpts()) {
+        c.save(); c.globalAlpha = o.off ? 0.4 : 1;
+        K.orb(c, o.x, o.y, 22, o.color, { glow: 14 });
+        K.text(o.label, o.x, o.y - 4, 17, '#0b0e1c', { weight: 800 });
+        K.text(o.sub, o.x, o.y + 11, 10, '#0b0e1c', { weight: 700 });
+        c.restore();
+      }
+    }
+    // HUD
+    K.chip(22, 16, 'Coins', '$' + coins, '#ffd34d', { w: 110 });
+    K.chip(142, 16, 'Lives', lives, '#ff5d73', { w: 90 });
+    K.chip(242, 16, 'Wave', `${wave} / ${WAVES}`, '#4fd1ff', { w: 100 });
+    if (!waveOn) K.button(waveBtn);
+    else K.chip(22, 548, 'Monsters left', spawnQ.length + enemies.length, '#ff6bd6', { w: 190, h: 40, size: 16 });
+    K.button(speedBtn);
+    if (msg && msg.t > 0) {
+      c.globalAlpha = Math.min(1, msg.t);
+      K.panel(c, 400 - 230, 520, 460, 36, { r: 18 });
+      K.text(msg.text, 400, 538, 14, '#fff', { weight: 600 });
+      c.globalAlpha = 1;
+    }
+  }
+})();
+</script>
+</body>
+</html>
