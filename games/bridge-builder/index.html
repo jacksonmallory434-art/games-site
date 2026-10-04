@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bridge Builder</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const W = 800, H = 600, WY = 500, TOP = 128;
+  const tenth = v => Math.round(v * 10) / 10;
+  const fmt = v => String(tenth(v));
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const isInt = v => Math.abs(v - Math.round(v)) < 1e-6;
+
+  // Legs are [run, rise]. Negative rise = ramp goes down.
+  const T1 = [[4, 3], [3, 4], [8, 6], [6, 8]];
+  const T2 = [[12, 5], [8, 6], [12, 9], [15, 8], [5, 12], [9, 12], [24, 7]];
+  const neg = ([r, s]) => [r, -s];
+  const flip = l => Math.random() < 0.5 ? neg(l) : l;
+  function nonint(r0, r1, s0, s1) {
+    for (;;) { const r = ri(r0, r1), s = ri(s0, s1); if (!isInt(Math.hypot(r, s))) return [r, s]; }
+  }
+  // Build a crossing: points (grid units, y up) joined by ramps. types: 'c' = find the ramp, 'a' = find the tower height.
+  function chain(legs, types = [], tower = false) {
+    let x = 0, y = 0;
+    const pts = [{ x, y }];
+    for (const [r, s] of legs) { x += r; y += s; pts.push({ x, y }); }
+    const lo = Math.min(...pts.map(p => p.y));
+    pts.forEach(p => p.y += 1.5 - lo);
+    const segs = legs.map(([r, s], i) => {
+      const t = types[i] || 'c', c = Math.hypot(r, s);
+      return { run: r, rise: s, c, t, ans: t === 'c' ? c : Math.abs(s) };
+    });
+    return { pts, segs, tower };
+  }
+  function towerDec() {
+    for (;;) { const c = ri(5, 10), b = ri(2, c - 1), a = Math.sqrt(c * c - b * b); if (!isInt(a)) return chain([[b, a]], ['a'], true); }
+  }
+
+  const LV = [
+    { name: 'First ramps', gen: () => chain([pick(T1)]) },
+    { name: 'Bigger triples', gen: () => chain([pick(T2)]) },
+    { name: 'Round to tenths', gen: () => chain([nonint(2, 6, 1, 5)]) },
+    { name: 'Wide gaps', gen: () => chain([nonint(5, 12, 2, 8)]) },
+    { name: 'Two spans', gen: () => chain([pick([[4, 3], [3, 4]]), pick([[4, 3], [3, 4], [8, 6]])]) },
+    { name: 'Two spans, decimals', gen: () => chain([nonint(2, 6, 1, 4), nonint(2, 6, 1, 4)]) },
+    { name: 'Build the tower', gen: () => chain([pick([[4, 3], [3, 4], [8, 6], [6, 8], [12, 5]])], ['a'], true) },
+    { name: 'Tower, decimals', gen: towerDec },
+    { name: 'Up and down', gen: () => pick([
+      () => chain([neg(nonint(3, 8, 2, 6))]),
+      () => chain([nonint(2, 6, 1, 4), neg(nonint(2, 6, 1, 4))]),
+      () => chain([neg(pick(T1)), pick(T1)]),
+    ])() },
+    { name: 'Grand canyon', gen: () => chain([flip(nonint(2, 5, 1, 4)), flip(pick([[4, 3], [3, 4]])), flip(nonint(2, 5, 1, 4))]) },
+  ];
+  const PER = 3; // bridges per level
+
+  let lv = 0, cross = 0, lives = 3, score = 0, startLv = 0;
+  let C, U = 40, OX = 100, TW = 40, seg = 0, inp = '', planks = [], debris = [], phase = 'input', T = 0, first = true, truck, why = null;
+  let unlocked = 0;
+
+  const K = window.K = MA.game({
+    slug: 'bridge-builder', title: 'Bridge Builder', accent: '#ffb347', accent2: '#4fd1ff', bg: false,
+    noMenu: true, repeat: true, update, draw,
+    start: () => begin(startLv),
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (phase === 'fail') { if (K.hit(retryBtn, x, y)) retry(); return; }
+      if (phase !== 'input') return;
+      for (const b of keys) if (K.hit(b, x, y)) return press(b.k);
+      if (K.hit(buildBtn, x, y)) build();
+    },
+    key(k, e) {
+      if (K.state !== 'play') return;
+      if (k === 'Enter' || k === ' ') e.preventDefault(); // don't re-click a hidden overlay button that kept focus
+      if (phase === 'fail') { if (k === 'Enter' || k === ' ') retry(); return; }
+      if (phase !== 'input') return;
+      if (/^[0-9.]$/.test(k)) press(k);
+      else if (k === 'Backspace') press('<');
+      else if (k === 'Enter') build();
+      else if (k === 'ArrowUp' || k === 'ArrowRight') nudge(0.1);
+      else if (k === 'ArrowDown' || k === 'ArrowLeft') nudge(-0.1);
+    },
+  });
+
+  // ---- keypad
+  const keys = '1234567890.<'.split('').map((k, i) => ({ x: 156 + i * 42, y: 546, w: 38, h: 44, k, label: k === '<' ? '⌫' : k, size: 19, color: '#39405a', textColor: '#e6eaf8' }));
+  const buildBtn = { x: 664, y: 546, w: 86, h: 44, label: 'Build', size: 19 };
+  const retryBtn = { x: 300, y: 382, w: 200, h: 52, label: 'Try again', size: 20 };
+  function press(k) {
+    if (k === '<') inp = inp.slice(0, -1);
+    else if (k === '.') { if (!inp.includes('.')) inp = (inp || '0') + '.'; }
+    else if (inp.includes('.')) { if (inp.split('.')[1].length >= 1) return; inp += k; }
+    else { if (inp.length >= 3) return; inp = inp === '0' ? k : inp + k; }
+    K.sfx.tick();
+  }
+  function nudge(d) { inp = String(Math.max(0, tenth((parseFloat(inp) || 0) + d))); K.sfx.tick(); }
+
+  // ---- flow
+  unlocked = K.load('unlocked', 0);
+  function menu() {
+    K.state = 'menu';
+    const best = K.best();
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Bridge Builder',
+      sub: 'Trucks need to cross the gaps. Work out how long each ramp must be, then build it!',
+      how: ['The <b>rise</b> (up) and <b>run</b> (across) make a right triangle. The ramp is the long side.', 'Use <b>a² + b² = c²</b>. Type the length on the keypad and press <b>Build</b>.', 'Too short and the truck falls. Too long and the ramp won\'t fit. Round to the nearest tenth.'],
+      html: best ? `<p class="ma-best">Best: <b>${best}</b></p>` : '',
+      levels: { n: LV.length, unlocked: Math.min(LV.length - 1, unlocked), stars: LV.map((_, i) => i < unlocked ? 1 : 0), on: i => begin(i) },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function begin(i) { startLv = lv = i; cross = 0; lives = 3; score = 0; K.state = 'play'; newCross(); }
+  function newCross() { C = LV[lv].gen(); layout(); first = true; reset(); }
+  function retry() { first = false; reset(); K.sfx.click(); }
+  function reset() { seg = 0; inp = ''; planks = []; debris = []; phase = 'input'; T = 0; why = null; truck = { x: sx(C.pts[0].x) - 60, y: sy(C.pts[0].y), ang: 0, roll: 0, v: 0 }; }
+
+  function layout() {
+    const p = C.pts, wu = p[p.length - 1].x + (C.tower ? 1.4 : 0);
+    let my = Math.max(...p.map(q => q.y));
+    if (C.tower) my = Math.max(my, p[0].y + C.segs[0].c);
+    U = Math.min(540 / wu, (WY - TOP) / (my + 0.4), 64);
+    OX = W / 2 - wu * U / 2;
+    TW = 1.4 * U;
+  }
+  const sx = x => OX + x * U, sy = y => WY - y * U;
+
+  function build() {
+    const v = parseFloat(inp);
+    if (!(v > 0)) { K.sfx.bad(); K.shake(4); K.float(400, 520, 'Type a length first', '#ff8a8a', 18); return; }
+    const sg = C.segs[seg], ok = Math.abs(v - tenth(sg.ans)) < 0.001 || Math.abs(v - sg.ans) < 0.05;
+    const p = { i: seg, v, ok, len: sg.c, ang: Math.atan2(sg.rise, sg.run) };
+    if (sg.t === 'c') {
+      p.kind = ok ? 'ok' : v < sg.ans ? 'short' : 'long';
+      if (!ok) p.len = Math.min(v, sg.c * 1.35);
+    } else {
+      p.kind = ok ? 'ok' : v > sg.ans ? 'tall' : 'shortT';
+      p.towerH = ok ? sg.ans : v;
+      if (p.kind === 'shortT') p.ang = Math.atan2(v, sg.run);
+    }
+    planks.push(p);
+    phase = 'build'; T = 0; K.sfx.pop();
+  }
+  const buildDur = () => C.tower ? 1.4 : 0.7;
+
+  function plankEnds(p, prog = 1) {
+    const A = C.pts[p.i];
+    let ang = p.ang, len = p.len;
+    if (C.segs[p.i].t === 'a') ang = Math.PI / 2 + (p.ang - Math.PI / 2) * K.ease(Math.max(0, prog * 2 - 1));
+    else len *= K.ease(prog);
+    return [A, { x: A.x + len * Math.cos(ang), y: A.y + len * Math.sin(ang) }];
+  }
+
+  function startDrive() {
+    const P = C.pts, path = [[truck.x, truck.y], [sx(P[0].x), sy(P[0].y)]];
+    let fall = null;
+    for (const p of planks) {
+      if (p.kind === 'long') { fall = p.kind; break; }
+      const e = plankEnds(p)[1];
+      if (p.kind === 'ok') {
+        if (C.tower) path.push([sx(e.x), sy(e.y)], [sx(e.x) + TW / 2, sy(e.y)]);
+        else path.push([sx(P[p.i + 1].x), sy(P[p.i + 1].y)]);
+        continue;
+      }
+      if (p.kind === 'shortT') path.push([sx(P[1].x), sy(P[0].y + p.v)]);
+      else path.push([sx(e.x), sy(e.y)]);
+      fall = p.kind; break;
+    }
+    if (!fall && !C.tower) path.push([W + 80, sy(P[P.length - 1].y)]);
+    const lens = [0];
+    for (let i = 1; i < path.length; i++) lens.push(lens[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+    Object.assign(truck, { path, lens, s: 0, v: 60, fall, falling: false });
+    phase = 'drive'; T = 0; K.sfx.whoosh();
+  }
+
+  function update(dt) {
+    T += dt;
+    for (let i = debris.length - 1; i >= 0; i--) {
+      const d = debris[i]; d.vy += 900 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.ang += d.va * dt;
+      if (d.y > WY && !d.splash) { d.splash = 1; K.burst(d.x, WY, '#7fd3ff', 10, 160, 3, false); d.vy *= 0.2; }
+      if (d.y > H + 60) debris.splice(i, 1);
+    }
+    if (phase === 'build') {
+      const p = planks[planks.length - 1], D = buildDur();
+      if (p.kind === 'long' && !p.gone && T > D + 0.35) {
+        p.gone = true;
+        const [A, E] = plankEnds(p).map(q => [sx(q.x), sy(q.y)]), mx = (A[0] + E[0]) / 2, my = (A[1] + E[1]) / 2, half = Math.hypot(E[0] - A[0], E[1] - A[1]) / 2, ang = Math.atan2(E[1] - A[1], E[0] - A[0]);
+        debris.push({ x: (A[0] + mx) / 2, y: (A[1] + my) / 2, len: half, ang, vx: -40, vy: -120, va: -3 }, { x: (E[0] + mx) / 2, y: (E[1] + my) / 2, len: half, ang, vx: 60, vy: -160, va: 4 });
+        K.burst(mx, my, '#ffb347', 24, 260); K.sfx.boom(); K.shake(8);
+        K.float(mx, my - 30, "Too long! It won't fit.", '#ff8a8a', 22);
+      }
+      if (p.kind === 'long' && T > D - 0.01 && !p.jam) { p.jam = 1; K.sfx.bad(); K.flash('#ff5d73', 0.2); }
+      if (T > D + (p.kind === 'long' ? 0.9 : 0.25)) {
+        if (p.kind === 'ok') { const e = plankEnds(p)[1]; K.burst(sx(e.x), sy(e.y), '#ffd34d', 10, 140, 3); K.sfx.coin(); }
+        seg++; inp = '';
+        if (seg < C.segs.length) { phase = 'input'; } else startDrive();
+      }
+    } else if (phase === 'drive') {
+      const tr = truck, { path, lens } = tr;
+      let k = 1; while (k < path.length - 1 && lens[k] < tr.s) k++;
+      const [x0, y0] = path[k - 1], [x1, y1] = path[k];
+      const segAng = Math.atan2(y1 - y0, x1 - x0);
+      tr.v += ((260 - tr.v) * 1.5 + 200 * Math.sin(segAng)) * dt; // slows uphill, speeds up downhill
+      tr.v = K.clamp(tr.v, 110, 380);
+      tr.s += tr.v * dt; tr.roll += tr.v * dt / 7;
+      const f = K.clamp((tr.s - lens[k - 1]) / (lens[k] - lens[k - 1] || 1), 0, 1);
+      tr.x = x0 + (x1 - x0) * f; tr.y = y0 + (y1 - y0) * f;
+      tr.ang += (segAng - tr.ang) * Math.min(1, dt * 12);
+      if (tr.s >= lens[lens.length - 1]) {
+        if (tr.fall) {
+          const back = tr.fall === 'tall' ? -0.3 : 1;
+          Object.assign(tr, { vx: Math.cos(segAng) * tr.v * back, vy: Math.sin(segAng) * tr.v, va: (back < 0 ? -1 : 1) * K.rand(2, 4) });
+          phase = 'fall'; T = 0; K.sfx.bad();
+          if (tr.fall === 'tall') { K.shake(6); K.burst(tr.x + 20, tr.y - 10, '#fff', 10, 160, 3); }
+          if (tr.fall === 'shortT') { const p = planks[0]; p.tipping = 1; }
+        } else success();
+      }
+    } else if (phase === 'fall') {
+      const tr = truck;
+      tr.vy += 900 * dt; tr.x += tr.vx * dt; tr.y += tr.vy * dt; tr.ang += tr.va * dt;
+      if (tr.y > WY + 4 && !tr.splash) {
+        tr.splash = T; tr.vy *= 0.15; tr.vx *= 0.2; tr.va *= 0.2;
+        K.burst(tr.x, WY, '#7fd3ff', 34, 320, 5); K.burst(tr.x, WY, '#ffffff', 12, 200, 3, false); K.sfx.boom(); K.shake(12);
+      }
+      if (tr.splash && T - tr.splash > 1) fail();
+    } else if (phase === 'done') {
+      if (T > 1.6) next();
+    }
+  }
+
+  function success() {
+    const pts = 100 * C.segs.length + (first ? 50 : 0);
+    score += pts; phase = 'done'; T = 0;
+    const x = C.tower ? truck.x : W / 2, y = C.tower ? truck.y - 60 : 200;
+    K.float(x, y, `+${pts}${first ? '  First try!' : ''}`, '#ffd34d', 30);
+    K.burst(x, y + 30, '#ffd34d', 36, 340); K.burst(x, y + 30, '#4fd1ff', 20, 260);
+    K.sfx.win();
+  }
+  function next() {
+    cross++;
+    if (cross < PER) return newCross();
+    unlocked = Math.max(unlocked, lv + 1); K.save('unlocked', unlocked);
+    if (lv + 1 >= LV.length) return K.gameOver(score, { kicker: 'All 10 levels built', title: 'Master builder!', msg: 'Every truck made it home. Pythagoras would be proud.', delay: 200 });
+    lives = Math.min(5, lives + 1);
+    K.state = 'over';
+    K.sfx.win();
+    K.overlay({
+      kicker: `Level ${lv + 1} of ${LV.length}`, title: 'Level clear!', score,
+      sub: `Bonus truck! Next up: <b>${LV[lv + 1].name}</b>`,
+      buttons: [{ label: 'Next level', on: () => { lv++; cross = 0; K.state = 'play'; newCross(); } }],
+    });
+  }
+
+  function explain(sg) {
+    const b = sg.run, a = Math.abs(sg.rise);
+    const root = (n, x) => `√${n} ${isInt(x) ? '= ' + Math.round(x) : '≈ ' + x.toFixed(2) + ' → ' + fmt(x)}`;
+    if (sg.t === 'c') { const s = b * b + a * a; return `${b}² + ${a}² = ${b * b} + ${a * a} = ${s},  so the ramp = ${root(s, Math.sqrt(s))}`; }
+    const c = Math.round(sg.c), d = c * c - b * b;
+    return `${c}² − ${b}² = ${c * c} − ${b * b} = ${d},  so the tower = ${root(d, Math.sqrt(d))}`;
+  }
+  const REASON = {
+    short: 'Too short! The truck fell off the end.', long: "Too long! The ramp didn't fit.",
+    tall: 'Tower too tall! The ramp hit its side.', shortT: 'Tower too short! The ramp tipped over.',
+  };
+  function fail() {
+    const p = planks.find(q => !q.ok), sg = C.segs[p.i];
+    why = { title: REASON[p.kind], math: explain(sg), you: `You built ${fmt(p.v)}. It needed ${fmt(sg.ans)}.` };
+    lives--;
+    if (lives <= 0) {
+      phase = 'over';
+      K.gameOver(score, { title: 'Out of trucks', msg: `${why.title}<br>${why.math}`, delay: 300 });
+    } else { phase = 'fail'; K.sfx.lose(); }
+  }
+
+  // ---- drawing
+  function rock(c, x0, x1, yt) {
+    const g = c.createLinearGradient(0, yt, 0, H);
+    g.addColorStop(0, '#7a5d48'); g.addColorStop(1, '#2a1f33');
+    c.fillStyle = g; c.fillRect(x0, yt, x1 - x0, H - yt);
+    c.fillStyle = 'rgba(0,0,0,.18)';
+    for (let y = yt + 22; y < H; y += 26) c.fillRect(x0, y, x1 - x0, 2);
+    c.fillStyle = '#2b2f45'; c.fillRect(x0, yt - 2, x1 - x0, 8);
+    c.fillStyle = '#ffd34d';
+    for (let x = x0 + 8; x < x1 - 14; x += 30) c.fillRect(x, yt + 1, 14, 2);
+    c.fillStyle = '#7ee36b'; c.fillRect(x0, yt + 6, x1 - x0, 3);
+  }
+  function plank(c, a, b, col = '#d9a05b', alpha = 1) {
+    c.save(); c.globalAlpha = alpha; c.lineCap = 'round';
+    c.strokeStyle = 'rgba(0,0,0,.45)'; c.lineWidth = 11; c.beginPath(); c.moveTo(a[0], a[1] + 3); c.lineTo(b[0], b[1] + 3); c.stroke();
+    c.strokeStyle = col; c.lineWidth = 9; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+    c.strokeStyle = 'rgba(255,240,200,.55)'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(a[0], a[1] - 2.5); c.lineTo(b[0], b[1] - 2.5); c.stroke();
+    c.fillStyle = '#5a3a1e';
+    for (const [x, y] of [a, b]) { c.beginPath(); c.arc(x, y, 3, 0, 7); c.fill(); }
+    c.restore();
+  }
+  function label(c, x, y, s, col = '#fff', hot = false) {
+    c.font = K.font(16, 800);
+    const w = c.measureText(s).width + 16;
+    K.panel(c, x - w / 2, y - 13, w, 26, { r: 9, fill: hot ? 'rgba(40,24,6,.85)' : 'rgba(10,14,32,.78)', stroke: hot ? '#ffb347' : 'rgba(255,255,255,.18)', glow: hot ? 12 : 0, glowColor: '#ffb347' });
+    K.text(s, x, y + 1, 16, col, { weight: 800 });
+  }
+  function dashed(c, pts, col) {
+    c.save(); c.setLineDash([6, 6]); c.strokeStyle = col; c.lineWidth = 2;
+    c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); c.restore();
+  }
+  function drawTruck(c, x, y, ang, roll) {
+    c.save(); c.translate(x, y); c.rotate(ang);
+    const bob = phase === 'drive' ? Math.sin(K.t * 30) * 0.8 : 0;
+    c.translate(0, bob);
+    c.fillStyle = '#20243a'; c.fillRect(-27, -14, 54, 6);
+    K.tile(c, -27, -36, 33, 21, '#ff9f43', { r: 4, depth: 2 });
+    K.text('π', -10.5, -26, 13, '#5a2c00', { weight: 800, c });
+    K.tile(c, 8, -31, 19, 18, '#4fd1ff', { r: 5, depth: 2 });
+    c.fillStyle = '#e6fbff'; c.fillRect(15, -28, 9, 7);
+    c.fillStyle = '#ffe58a'; c.fillRect(25, -18, 3, 3);
+    c.translate(0, -bob);
+    for (const wx of [-16, 16]) {
+      c.fillStyle = '#111'; c.beginPath(); c.arc(wx, -7, 7.5, 0, 7); c.fill();
+      c.fillStyle = '#9aa3c4'; c.beginPath(); c.arc(wx, -7, 3.2, 0, 7); c.fill();
+      c.strokeStyle = '#333'; c.lineWidth = 1.5; c.beginPath();
+      c.moveTo(wx + Math.cos(roll) * 6, -7 + Math.sin(roll) * 6); c.lineTo(wx - Math.cos(roll) * 6, -7 - Math.sin(roll) * 6); c.stroke();
+    }
+    c.restore();
+  }
+
+  function draw(c, t) {
+    // sky + unit grid
+    const g = c.createLinearGradient(0, 0, 0, WY);
+    g.addColorStop(0, '#0d1433'); g.addColorStop(1, '#2d2050');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    const sun = c.createRadialGradient(640, 170, 10, 640, 170, 160);
+    sun.addColorStop(0, 'rgba(255,179,71,.35)'); sun.addColorStop(1, 'rgba(255,179,71,0)');
+    c.fillStyle = sun; c.fillRect(0, 0, W, H);
+    if (!C) return;
+    c.fillStyle = 'rgba(140,190,255,.09)';
+    for (let x = OX % U; x < W; x += U) c.fillRect(Math.round(x), TOP - 10, 1, WY - TOP + 10);
+    for (let y = WY; y > TOP - 10; y -= U) c.fillRect(0, Math.round(y), W, 1);
+
+    const P = C.pts, n = P.length - 1, A = P[0];
+    rock(c, -10, sx(A.x), sy(A.y));
+    if (!C.tower) rock(c, sx(P[n].x), W + 10, sy(P[n].y));
+    for (let i = 1; i < n; i++) {
+      const x = sx(P[i].x), y = sy(P[i].y);
+      c.fillStyle = '#5b6380'; c.fillRect(x - 8, y, 16, WY - y + 20);
+      c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(x - 8, y, 4, WY - y + 20);
+      c.fillStyle = '#9aa3c4'; c.fillRect(x - 12, y - 1, 24, 6);
+    }
+    // tower: stone pedestal up to cliff level, then the scaffold the player builds
+    const p0 = planks[0];
+    if (C.tower) {
+      const bx = sx(P[1].x);
+      c.fillStyle = '#6a5243'; c.fillRect(bx, sy(A.y), TW, WY - sy(A.y) + 20);
+      c.fillStyle = 'rgba(0,0,0,.2)'; for (let y = sy(A.y) + 20; y < WY; y += 22) c.fillRect(bx, y, TW, 2);
+      if (p0) {
+        const h = p0.towerH * K.ease(Math.min(1, phase === 'build' ? T / buildDur() * 2 : 1)), yt = sy(A.y + h), yb = sy(A.y);
+        c.save(); c.strokeStyle = '#4fd1ff'; c.shadowColor = '#4fd1ff'; c.shadowBlur = 10; c.lineWidth = 3;
+        c.strokeRect(bx + 3, yt, TW - 6, yb - yt);
+        c.lineWidth = 1.5; c.beginPath();
+        const step = Math.max(14, TW * 0.8);
+        for (let y = yb; y > yt + 1; y -= step) { const y2 = Math.max(yt, y - step); c.moveTo(bx + 3, y); c.lineTo(bx + TW - 3, y2); c.moveTo(bx + TW - 3, y); c.lineTo(bx + 3, y2); }
+        c.stroke(); c.restore();
+        c.fillStyle = '#9aa3c4'; c.fillRect(bx - 2, yt - 4, TW + 4, 7);
+        if (p0.ok && phase !== 'build') {
+          c.fillStyle = '#ddd'; c.fillRect(bx + TW - 8, yt - 44, 3, 40);
+          c.fillStyle = '#ff5d73'; c.beginPath(); c.moveTo(bx + TW - 5, yt - 44); c.lineTo(bx + TW + 18 + Math.sin(t * 6) * 3, yt - 37); c.lineTo(bx + TW - 5, yt - 30); c.fill();
+        }
+      }
+    }
+
+    // guide triangles for unbuilt spans
+    C.segs.forEach((sg, i) => {
+      if (i < planks.length) return;
+      const hot = phase === 'input' && i === seg, a = P[i], b = P[i + 1], col = hot ? 'rgba(255,211,77,.85)' : 'rgba(255,255,255,.3)';
+      const ax = sx(a.x), ay = sy(a.y), bx = sx(b.x), by = sy(b.y);
+      if (sg.t === 'c') {
+        dashed(c, [[ax, ay], [bx, ay], [bx, by]], col);
+        dashed(c, [[ax, ay], [bx, by]], hot ? 'rgba(255,179,71,.9)' : 'rgba(255,255,255,.3)');
+        const up = by < ay, cx = (ax + bx) / 2, cy = (ay + by) / 2;
+        label(c, cx, ay + (up ? 18 : -18), `run ${sg.run}`, '#4fd1ff');
+        label(c, bx + 34, cy, `${up ? 'rise' : 'drop'} ${Math.abs(sg.rise)}`, '#7ee36b');
+        const nx = cx - bx, ny = cy - ay, nl = Math.hypot(nx, ny); // push the label away from the right angle
+        label(c, cx + nx / nl * 28, cy + ny / nl * 28, hot && inp ? inp : '?', '#ffb347', hot);
+      } else {
+        dashed(c, [[ax, ay], [bx, ay]], col);
+        label(c, (ax + bx) / 2, ay + 18, `run ${sg.run}`, '#4fd1ff');
+        const vx = bx + TW / 2;
+        c.save(); c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(vx, ay - 4); c.lineTo(vx, ay - 40); c.moveTo(vx - 6, ay - 32); c.lineTo(vx, ay - 40); c.lineTo(vx + 6, ay - 32); c.stroke(); c.restore();
+        label(c, vx, ay - 56, `tower ${hot && inp ? inp : '?'}`, '#ffb347', hot);
+        plank(c, [ax, ay], [ax, sy(a.y + sg.c)]);
+        label(c, ax - 40, sy(a.y + sg.c / 2), `ramp ${fmt(sg.c)}`, '#ffb347');
+      }
+    });
+
+    // built ramps
+    for (const p of planks) {
+      if (p.gone) continue;
+      const prog = phase === 'build' && p === planks[planks.length - 1] ? Math.min(1, T / buildDur()) : 1;
+      let [a, b] = plankEnds(p, prog);
+      a = [sx(a.x), sy(a.y)]; b = [sx(b.x), sy(b.y)];
+      if (p.tipping) { c.save(); c.translate(sx(P[1].x), sy(A.y + p.v)); c.rotate(Math.min(0.9, (T) * 2.5)); c.translate(-sx(P[1].x), -sy(A.y + p.v)); }
+      plank(c, a, b, p.jam ? '#e0605a' : '#d9a05b');
+      if (p.tipping) c.restore();
+    }
+    for (const d of debris) {
+      const dx = Math.cos(d.ang) * d.len / 2, dy = Math.sin(d.ang) * d.len / 2;
+      plank(c, [d.x - dx, d.y - dy], [d.x + dx, d.y + dy], '#e0605a');
+    }
+
+    if (truck) drawTruck(c, truck.x, truck.y, truck.ang, truck.roll);
+
+    // water
+    const wg = c.createLinearGradient(0, WY, 0, H);
+    wg.addColorStop(0, 'rgba(40,140,210,.82)'); wg.addColorStop(1, 'rgba(10,40,90,.95)');
+    c.fillStyle = wg; c.beginPath(); c.moveTo(0, H);
+    for (let x = 0; x <= W; x += 16) c.lineTo(x, WY + Math.sin(x / 40 + t * 2) * 3);
+    c.lineTo(W, H); c.fill();
+    c.strokeStyle = 'rgba(180,230,255,.5)'; c.lineWidth = 2; c.beginPath();
+    for (let x = 0; x <= W; x += 16) c[x ? 'lineTo' : 'moveTo'](x, WY + Math.sin(x / 40 + t * 2) * 3);
+    c.stroke();
+
+    // HUD
+    K.chip(12, 10, 'Level', `${lv + 1} / ${LV.length}`, '#fff', { w: 96 });
+    K.chip(116, 10, 'Bridge', `${cross + 1} / ${PER}`, '#fff', { w: 96 });
+    K.panel(c, 220, 10, 150, 50, { r: 12 });
+    K.text('TRUCKS', 295, 24, 10, 'rgba(210,218,245,.65)');
+    for (let i = 0; i < 5; i++) { c.globalAlpha = i < lives ? 1 : 0.18; c.fillStyle = '#ff9f43'; K.rr(c, 240 + i * 23, 36, 17, 10, 3); c.fill(); c.fillStyle = '#4fd1ff'; c.fillRect(252 + i * 23, 33, 6, 8); c.fillStyle = '#111'; c.beginPath(); c.arc(244 + i * 23, 47, 3, 0, 7); c.arc(254 + i * 23, 47, 3, 0, 7); c.fill(); }
+    c.globalAlpha = 1;
+    K.chip(W - 12, 10, 'Score', score, '#ffd34d', { w: 120, align: 'right' });
+    K.panel(c, 380, 10, 276, 50, { r: 12 });
+    K.text(LV[lv].name, 518, 24, 10, 'rgba(210,218,245,.65)');
+    K.text('a² + b² = c²', 518, 42, 20, '#ffb347', { weight: 800, glow: 10 });
+
+    // question
+    let q = '';
+    if (phase === 'input') {
+      const sg = C.segs[seg], multi = C.segs.length > 1 ? `Span ${seg + 1} of ${C.segs.length}: ` : '';
+      q = sg.t === 'c' ? `${multi}${sg.rise > 0 ? 'rise' : 'drop'} ${Math.abs(sg.rise)}, run ${sg.run}. How long must the ramp be?` : `The ramp is ${fmt(sg.c)} long and reaches ${sg.run} across. How tall is the tower?`;
+      if (!isInt(sg.ans)) q += ' (nearest tenth)';
+    } else if (phase === 'build') q = 'Building...';
+    else if (phase === 'drive') q = 'Here comes the truck!';
+    else if (phase === 'done') q = 'Made it!';
+    if (q) { K.panel(c, 12, 68, W - 24, 38, { r: 12 }); K.text(q, W / 2, 88, 16, '#e6eaf8', { weight: 600 }); }
+
+    // keypad
+    K.panel(c, 0, 536, W, 70, { r: 0, fill: 'rgba(8,10,24,.82)' });
+    const sg = C.segs[Math.min(seg, C.segs.length - 1)];
+    K.panel(c, 12, 546, 136, 44, { r: 10, stroke: phase === 'input' ? '#ffb347' : 'rgba(255,255,255,.12)', glow: phase === 'input' ? 10 : 0, glowColor: '#ffb347' });
+    const cursor = phase === 'input' && Math.floor(t * 2) % 2 ? '|' : '';
+    K.text(`${sg.t === 'c' ? 'ramp' : 'tower'} = ${inp}${cursor}`, 80, 569, 19, inp ? '#fff' : 'rgba(255,255,255,.55)', { weight: 800 });
+    for (const b of keys) { b.disabled = phase !== 'input'; K.button(b); }
+    buildBtn.disabled = phase !== 'input' || !inp; K.button(buildBtn);
+
+    if (phase === 'fail' && why) {
+      c.fillStyle = 'rgba(4,6,16,.55)'; c.fillRect(0, 0, W, 536);
+      K.panel(c, 110, 150, 580, 300, { r: 18, fill: 'rgba(20,24,52,.95)', glow: 30, glowColor: '#ff5d73' });
+      K.text(why.title, 400, 196, 26, '#ff8a8a', { weight: 800, glow: 12 });
+      K.text(why.you, 400, 244, 17, '#e6eaf8', { weight: 600 });
+      K.text(why.math, 400, 286, 16, '#ffd34d', { weight: 700 });
+      K.text(`${lives} truck${lives === 1 ? '' : 's'} left. Same bridge, try again!`, 400, 330, 15, '#9aa3c4', { weight: 600 });
+      K.button(retryBtn);
+    }
+  }
+
+  C = LV[0].gen(); layout(); reset();
+  // test hook
+  window.__bb = {
+    get phase() { return phase; }, get lv() { return lv; }, get cross() { return cross; }, get lives() { return lives; }, get score() { return score; }, get seg() { return seg; },
+    ans: () => tenth(C.segs[seg].ans), type: s => { inp = String(s); }, build, begin, retry, C: () => C,
+  };
+})();
+</script>
+</body>
+</html>

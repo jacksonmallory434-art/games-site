@@ -804,5 +804,70 @@
   "description": "Slingshot a probe around a star. Gravity bends its path into a conic section: a circle, an ellipse, a parabola, or a hyperbola. Thread every ring in one shot.",
   "howto": "Drag back and release to launch. Watch the readout for the orbit's type and eccentricity. Fly through every ring and avoid the moons and the sun.",
   "source": "MathAdvice"
+ },
+ {
+  "slug": "speed-trap",
+  "title": "Speed Trap",
+  "category": "Calculus",
+  "thumb": "thumbs/speed-trap.jpg",
+  "embed": "games/speed-trap/index.html",
+  "width": 800,
+  "height": 600,
+  "mobile": true,
+  "description": "Drive a car whose position vs. time graph is drawn live. Keep your line inside the green road by matching its slope, because the slope of your line is your speed.",
+  "howto": "Hold Gas (right arrow, D, or tap the right half) to speed up and Brake (left arrow, A, or tap the left half) to slow down. Keep braking at 0 to back up. Keep your line inside the green road: steeper means faster, flat means stopped, going down means reverse. If you stay off the road too long, the speed trap catches you. There are 10 levels, with stars for time spent on the road.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "box-factory",
+  "title": "Box Factory",
+  "category": "Calculus",
+  "thumb": "thumbs/box-factory.jpg",
+  "embed": "games/box-factory/index.html",
+  "width": 800,
+  "height": 600,
+  "mobile": true,
+  "description": "Cardboard sheets ride in on a conveyor belt. Cut squares from the corners and fold each one into the biggest open box you can before it drops into the chute. After every fold, the volume graph shows the peak where V'(x) = 0 and where your box landed.",
+  "howto": "Drag a corner square, use the slider, or press the left/right arrow keys to set the cut size x. Press FOLD or Space before the sheet reaches the chute. Volume is V = x(L-2x)(W-2x): the closer you get to the peak (or to the target volume), the more points you score. 8 levels, 3 lives, and the belt speeds up every level.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "bridge-builder",
+  "title": "Bridge Builder",
+  "category": "Geometry",
+  "thumb": "thumbs/bridge-builder.jpg",
+  "embed": "games/bridge-builder/index.html",
+  "width": 800,
+  "height": 600,
+  "mobile": true,
+  "description": "Build ramps so trucks can cross the gaps. Use the rise and run on the grid and a² + b² = c² to work out exactly how long each ramp must be. Too short and the truck falls in, too long and the ramp won't fit.",
+  "howto": "Read the rise and run for the gap, then work out the ramp length with a² + b² = c². Type it on the keypad (or keyboard, with arrow keys to nudge by 0.1) and press Build. When every span is built, the truck drives across. Round to the nearest tenth when needed. Later levels have bridges with two or three spans, towers where you find the missing side, and ramps that go up and down. You have 3 trucks, and you get one back each time you clear a level.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "pour-it",
+  "title": "Pour It",
+  "category": "Geometry",
+  "thumb": "thumbs/pour-it.jpg",
+  "embed": "games/pour-it/index.html",
+  "width": 800,
+  "height": 600,
+  "mobile": true,
+  "description": "Pour water into the tank it fills exactly. Work out the volumes of cylinders, cones, spheres, boxes, pyramids and prisms, then watch it fill, spill over or come up short.",
+  "howto": "Drag a jug onto the tank that holds exactly the same volume (or tap the jug, then the tank; keys: arrows pick a jug, 1-4 pour). Use V = πr²h, ⅓πr²h, ⁴⁄₃πr³, l·w·h, ⅓·l·w·h and ½·b·h·length. A spill or a short pour costs a heart. Later levels have target lines, several jugs to combine and chain pours.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "shape-shifter",
+  "title": "Shape Shifter",
+  "category": "Geometry",
+  "thumb": "thumbs/shape-shifter.jpg",
+  "embed": "games/shape-shifter/index.html",
+  "width": 800,
+  "height": 600,
+  "mobile": true,
+  "description": "Slide, turn and flip a shape on the coordinate grid until it fits its outline. Each move shows its rule, like (x, y) → (x + 3, y − 1). Solve each puzzle in as few moves as you can.",
+  "howto": "Pick a tool, then click a grid point. Slide moves the glowing corner to that point. Turn rotates 90° or 180° about that point. Flip reflects over x = k, y = k, y = x or y = −x. A ghost shows where the shape will land. Walls block the path. Match par for 3 stars. Undo and Reset are always available. Keys 1–8 pick tools, arrow keys and Enter aim and apply, U undoes, R resets.",
+  "source": "MathAdvice"
  }
 ]
