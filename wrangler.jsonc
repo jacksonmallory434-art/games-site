@@ -6,5 +6,7 @@
     "directory": ".",
     // Show 404.html for links that don't match a page.
     "not_found_handling": "404-page"
-  }
+  },
+  // Needed for pull request preview builds (wrangler preview).
+  "previews": {}
 }
