@@ -1,42 +1,40 @@
-// Homepage: loads games.json, draws the grid, handles search + category filters.
-
-function placeholderColor(text) {
-  let h = 0;
-  for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return `linear-gradient(135deg, hsl(${h} 60% 45%), hsl(${(h + 50) % 360} 60% 30%))`;
-}
+// Homepage: loads games.json, draws the grid, handles search + topic filters.
 
 function cardHTML(g) {
-  const thumb = g.thumb
-    ? `<img class="thumb" src="${g.thumb}" alt="" loading="lazy">`
-    : `<div class="thumb ph" style="background:${placeholderColor(g.title)}">${g.title[0]}</div>`;
-  return `<a class="card" href="game.html?slug=${encodeURIComponent(g.slug)}">${thumb}<div class="name">${g.title}</div></a>`;
+  return `<a class="card" href="/game.html?slug=${encodeURIComponent(g.slug)}">` +
+    `<img class="thumb" src="/${g.thumb}" alt="" loading="lazy" width="512" height="384">` +
+    `<span class="name">${g.title}</span><span class="topic">${g.category}</span></a>`;
 }
 
 async function init() {
-  const games = await fetch('games.json').then(r => r.json());
+  const games = await fetch('/games.json').then(r => r.json());
   games.sort((a, b) => a.title.localeCompare(b.title));
 
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
   const search = document.getElementById('search');
   const cats = document.getElementById('cats');
+  document.getElementById('count').textContent = games.length;
   let activeCat = 'All';
 
   // Show topics from basic to advanced; any new topic goes at the end.
   const ORDER = ['Arithmetic', 'Number Sense', 'Algebra', 'Geometry', 'Statistics', 'Calculus'];
   const found = [...new Set(games.map(g => g.category))];
   const categories = ['All', ...ORDER.filter(c => found.includes(c)), ...found.filter(c => !ORDER.includes(c))];
-  cats.innerHTML = categories.map(c => `<button type="button" data-cat="${c}">${c}</button>`).join('');
+  const count = c => c === 'All' ? games.length : games.filter(g => g.category === c).length;
+  cats.innerHTML = categories.map(c => `<button type="button" data-cat="${c}">${c}<span class="n">${count(c)}</span></button>`).join('');
 
   function render() {
     const q = search.value.trim().toLowerCase();
     const list = games.filter(g =>
       (activeCat === 'All' || g.category === activeCat) &&
-      g.title.toLowerCase().includes(q));
+      (!q || (g.title + ' ' + g.category + ' ' + g.description).toLowerCase().includes(q)));
     grid.innerHTML = list.map(cardHTML).join('');
     empty.hidden = list.length > 0;
-    cats.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.cat === activeCat));
+    cats.querySelectorAll('button').forEach(b => {
+      const on = b.dataset.cat === activeCat;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+    });
   }
 
   cats.addEventListener('click', e => {
