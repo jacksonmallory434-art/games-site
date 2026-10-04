@@ -39,6 +39,7 @@ async function init() {
   iframe.title = g.title;
   iframe.allow = 'fullscreen; autoplay; gamepad';
   iframe.setAttribute('scrolling', 'no');
+  iframe.addEventListener('load', () => frame.classList.add('loaded'));
   frame.appendChild(iframe);
 
   // Fullscreen, with a fallback for iPhones that don't support it.
