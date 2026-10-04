@@ -1,7 +1,7 @@
 // Homepage: loads games.json, draws the grid, handles search + topic filters.
 
 function cardHTML(g) {
-  return `<a class="card" href="/game.html?slug=${encodeURIComponent(g.slug)}">` +
+  return `<a class="card" href="/play/${encodeURIComponent(g.slug)}/">` +
     `<img class="thumb" src="/${g.thumb}" alt="" loading="lazy" width="512" height="384">` +
     `<span class="name">${g.title}</span><span class="topic">${g.category}</span></a>`;
 }

@@ -1,7 +1,7 @@
-// Game page: reads ?slug=, builds the iframe, fullscreen button, "more games".
+// Game page: reads window.GAME_SLUG (or ?slug=), builds the iframe, fullscreen button, "more games".
 
 async function init() {
-  const slug = new URLSearchParams(location.search).get('slug');
+  const slug = window.GAME_SLUG || new URLSearchParams(location.search).get('slug');
   const games = await fetch('/games.json').then(r => r.json());
   const g = games.find(x => x.slug === slug);
 
@@ -10,7 +10,7 @@ async function init() {
     return;
   }
 
-  document.title = `${g.title} – MathAdvice`;
+  if (!window.GAME_SLUG) document.title = `${g.title} – MathAdvice`;
   document.getElementById('title').textContent = g.title;
   document.getElementById('topic').textContent = g.category;
   document.getElementById('desc').textContent = g.description;
@@ -59,7 +59,7 @@ async function init() {
     .sort((a, b) => (b.category === g.category) - (a.category === g.category))
     .slice(0, 8);
   document.getElementById('more').innerHTML = more.map(x =>
-    `<a class="card" href="/game.html?slug=${encodeURIComponent(x.slug)}"><img class="thumb" src="/${x.thumb}" alt="" loading="lazy" width="512" height="384">` +
+    `<a class="card" href="/play/${encodeURIComponent(x.slug)}/"><img class="thumb" src="/${x.thumb}" alt="" loading="lazy" width="512" height="384">` +
     `<span class="name">${x.title}</span><span class="topic">${x.category}</span></a>`).join('');
 }
 

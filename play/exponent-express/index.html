@@ -3,9 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Play – MathAdvice</title>
-  <meta name="description" content="Play a free math game on MathAdvice.">
-  <script>/* redirect-old-links */ if (!window.GAME_SLUG) { var s = new URLSearchParams(location.search).get("slug"); if (s) location.replace("/play/" + encodeURIComponent(s) + "/"); }</script>
+  <title>Exponent Express: free number sense game – MathAdvice</title>
+  <meta name="description" content="Squares, cubes, powers of 2, 3, 5 and 10, square and cube roots, the zero exponent, and negative exponents.">
+  <link rel="canonical" href="https://mathadvice.org/play/exponent-express/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MathAdvice">
+  <meta property="og:title" content="Exponent Express – MathAdvice">
+  <meta property="og:description" content="Squares, cubes, powers of 2, 3, 5 and 10, square and cube roots, the zero exponent, and negative exponents.">
+  <meta property="og:url" content="https://mathadvice.org/play/exponent-express/">
+  <meta property="og:image" content="https://mathadvice.org/thumbs/exponent-express.jpg">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": ["VideoGame", "LearningResource"], "name": "Exponent Express", "description": "Squares, cubes, powers of 2, 3, 5 and 10, square and cube roots, the zero exponent, and negative exponents.", "url": "https://mathadvice.org/play/exponent-express/", "image": "https://mathadvice.org/thumbs/exponent-express.jpg", "genre": "Educational", "educationalUse": "practice", "learningResourceType": "Game", "about": "Number Sense", "isAccessibleForFree": true, "playMode": "SinglePlayer", "applicationCategory": "Game", "operatingSystem": "Any (web browser)", "publisher": {"@type": "Organization", "name": "MathAdvice", "url": "https://mathadvice.org/"}}</script>
   <meta name="theme-color" content="#13213c">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
@@ -26,8 +33,8 @@
 
   <main class="wrap play">
     <div class="play-head">
-      <h1 id="title">Loading…</h1>
-      <span class="topic" id="topic"></span>
+      <h1 id="title">Exponent Express</h1>
+      <span class="topic" id="topic">Number Sense</span>
       <a class="back" href="/">All games</a>
     </div>
     <div id="frame" class="frame"></div>
@@ -36,9 +43,9 @@
       <span id="mobile" class="tag"></span>
     </div>
     <section class="info">
-      <div><h2>About this game</h2><p id="desc"></p></div>
-      <div><h2>How to play</h2><p id="howto"></p></div>
-      <p class="credit">Made by <span id="source"></span>.<span id="lic"></span></p>
+      <div><h2>About this game</h2><p id="desc">Squares, cubes, powers of 2, 3, 5 and 10, square and cube roots, the zero exponent, and negative exponents.</p></div>
+      <div><h2>How to play</h2><p id="howto">Click the right answer or press 1–4. Wrong answers cost 5 seconds and explain the rule.</p></div>
+      <p class="credit">Made by <span id="source">MathAdvice</span>.<span id="lic"></span></p>
     </section>
     <h2>More games</h2>
     <div id="more" class="grid small"></div>
@@ -52,6 +59,7 @@
     </div>
   </footer>
 
+  <script>window.GAME_SLUG = "exponent-express";</script>
   <script src="/js/game.js"></script>
 </body>
 </html>

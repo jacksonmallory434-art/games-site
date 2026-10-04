@@ -3,9 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Play – MathAdvice</title>
-  <meta name="description" content="Play a free math game on MathAdvice.">
-  <script>/* redirect-old-links */ if (!window.GAME_SLUG) { var s = new URLSearchParams(location.search).get("slug"); if (s) location.replace("/play/" + encodeURIComponent(s) + "/"); }</script>
+  <title>Marble Odds: free statistics game – MathAdvice</title>
+  <meta name="description" content="A bag of colored marbles. What is the probability of pulling out a certain color? Give your answer as a simplified fraction.">
+  <link rel="canonical" href="https://mathadvice.org/play/marble-odds/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MathAdvice">
+  <meta property="og:title" content="Marble Odds – MathAdvice">
+  <meta property="og:description" content="A bag of colored marbles. What is the probability of pulling out a certain color? Give your answer as a simplified fraction.">
+  <meta property="og:url" content="https://mathadvice.org/play/marble-odds/">
+  <meta property="og:image" content="https://mathadvice.org/thumbs/marble-odds.jpg">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": ["VideoGame", "LearningResource"], "name": "Marble Odds", "description": "A bag of colored marbles. What is the probability of pulling out a certain color? Give your answer as a simplified fraction.", "url": "https://mathadvice.org/play/marble-odds/", "image": "https://mathadvice.org/thumbs/marble-odds.jpg", "genre": "Educational", "educationalUse": "practice", "learningResourceType": "Game", "about": "Statistics", "isAccessibleForFree": true, "playMode": "SinglePlayer", "applicationCategory": "Game", "operatingSystem": "Any (web browser)", "publisher": {"@type": "Organization", "name": "MathAdvice", "url": "https://mathadvice.org/"}}</script>
   <meta name="theme-color" content="#13213c">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
@@ -26,8 +33,8 @@
 
   <main class="wrap play">
     <div class="play-head">
-      <h1 id="title">Loading…</h1>
-      <span class="topic" id="topic"></span>
+      <h1 id="title">Marble Odds</h1>
+      <span class="topic" id="topic">Statistics</span>
       <a class="back" href="/">All games</a>
     </div>
     <div id="frame" class="frame"></div>
@@ -36,9 +43,9 @@
       <span id="mobile" class="tag"></span>
     </div>
     <section class="info">
-      <div><h2>About this game</h2><p id="desc"></p></div>
-      <div><h2>How to play</h2><p id="howto"></p></div>
-      <p class="credit">Made by <span id="source"></span>.<span id="lic"></span></p>
+      <div><h2>About this game</h2><p id="desc">A bag of colored marbles. What is the probability of pulling out a certain color? Give your answer as a simplified fraction.</p></div>
+      <div><h2>How to play</h2><p id="howto">Click the right answer or press 1–4.</p></div>
+      <p class="credit">Made by <span id="source">MathAdvice</span>.<span id="lic"></span></p>
     </section>
     <h2>More games</h2>
     <div id="more" class="grid small"></div>
@@ -52,6 +59,7 @@
     </div>
   </footer>
 
+  <script>window.GAME_SLUG = "marble-odds";</script>
   <script src="/js/game.js"></script>
 </body>
 </html>
