@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Box Factory</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Each level: belt speed (px/s), 3 sheets, mode per sheet: 'max' = biggest box, 'tgt' = hit a target volume.
+  const LEVELS = [
+    { v: 38, modes: ['max', 'max', 'max'], showV: true },
+    { v: 50, modes: ['max', 'max', 'max'] },
+    { v: 62, modes: ['max', 'max', 'max'] },
+    { v: 70, modes: ['tgt', 'tgt', 'tgt'], showV: true },
+    { v: 80, modes: ['max', 'tgt', 'max'] },
+    { v: 92, modes: ['tgt', 'max', 'tgt'] },
+    { v: 106, modes: ['max', 'tgt', 'max'] },
+    { v: 122, modes: ['tgt', 'max', 'max'] },
+  ];
+  const PER = 3, BELT_Y0 = 104, BELT_Y1 = 452, CY = 278, CHUTE = 772;
+  const KRAFT = '#d9a46a', KRAFT_OUT = '#b97f45';
+  const GP = { x: 432, y: 108, w: 352, h: 340 };
+  const slider = { x0: 150, x1: 590, y: 548 };
+  const foldBtn = { x: 626, y: 520, w: 150, h: 56, label: 'FOLD', sub: 'Space', size: 22 };
+
+  let lvl, idx, score, lives, streak, sh, phase, pt, beltOff, drag, scraps, banner, res, missed;
+
+  const K = window.K = MA.game({
+    slug: 'box-factory', title: 'Box Factory', accent: '#ffb057', accent2: '#ff6b8b', bg: ['#1a1222', '#0d1428'],
+    tagline: 'Cut squares from the corners of each cardboard sheet and fold it into the biggest open box you can, before the belt dumps it!',
+    how: [
+      'Drag a <b>corner square</b> (or the slider, or ← →) to choose the cut size <b>x</b>.',
+      'Press <b>FOLD</b> (or Space) before the sheet reaches the chute.',
+      'Box volume is <b>V = x(L − 2x)(W − 2x)</b>. Too small a cut = flat box. Too big = skinny box.',
+      'The best x is where the volume graph peaks: its slope (the derivative) is 0.',
+      'Later sheets ask for an exact volume. The belt speeds up every level!',
+    ],
+    start, update, draw, repeat: true,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (phase === 'result') return next();
+      if (phase !== 'ride') return;
+      if (K.hit(foldBtn, x, y)) return fold();
+      if (y > 515 && x > slider.x0 - 30 && x < slider.x1 + 30) { drag = { slider: true }; dragTo(x, y); return; }
+      const g = geo();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const cx = sh.cx + sx * g.s * sh.L / 2, cy = CY + sy * g.s * sh.W / 2;
+        const reach = g.s * sh.x + 34;
+        if (Math.abs(x - cx) < reach && Math.abs(y - cy) < reach) { drag = { sx, sy }; dragTo(x, y); return; }
+      }
+    },
+    move(x, y) { if (drag && phase === 'ride') dragTo(x, y); },
+    up() { drag = null; },
+    key(k) {
+      if (K.state !== 'play') return;
+      if (k === ' ' || k === 'Enter') { if (phase === 'ride') fold(); else if (phase === 'result') next(); return; }
+      if (phase !== 'ride') return;
+      const step = K.keys.Shift ? 0.5 : 0.1;
+      if (k === 'ArrowLeft' || k === 'ArrowDown') setX(sh.x - step);
+      if (k === 'ArrowRight' || k === 'ArrowUp') setX(sh.x + step);
+    },
+  });
+
+  // ---------- math ----------
+  const V = (x, L, W) => x * (L - 2 * x) * (W - 2 * x);
+  const xStar = (L, W) => (L + W - Math.sqrt(L * L - L * W + W * W)) / 6; // V'(x) = 0
+  const r1 = v => Math.round(v * 10) / 10;
+  const xMax = () => sh.W / 2 - 0.2;
+  function setX(v) {
+    const nx = K.clamp(r1(v), 0.2, r1(xMax()));
+    if (nx !== sh.x) { sh.x = nx; if (K.t - (sh.tickT || 0) > 0.04) { K.sfx.tick(); sh.tickT = K.t; } }
+  }
+  // closeness 0..1 of a cut x to the goal of the current sheet
+  function quality(x) {
+    const v = V(x, sh.L, sh.W);
+    return sh.mode === 'max' ? v / sh.vmax : Math.max(0, 1 - Math.abs(v - sh.T) / sh.T);
+  }
+  const GRADES = { max: [0.995, 0.98, 0.95], tgt: [0.99, 0.96, 0.9] };
+
+  // ---------- flow ----------
+  function start() { lvl = 0; idx = 0; score = 0; lives = 3; streak = 0; scraps = []; beltOff = 0; startLevel(); }
+  function startLevel() {
+    idx = 0;
+    banner = { t: 0, title: `Level ${lvl + 1}`, sub: lvl === 0 ? 'Make the biggest box you can!' : LEVELS[lvl].modes.includes('tgt') && !LEVELS[lvl - 1].modes.includes('tgt') ? 'New order: boxes with an exact volume!' : 'The belt speeds up!' };
+    K.sfx.whoosh();
+    newSheet();
+  }
+  function newSheet() {
+    const L = K.ri(16, 40), W = K.ri(Math.max(10, Math.ceil(L * 0.45)), L);
+    const mode = LEVELS[lvl].modes[idx];
+    const xs = xStar(L, W), vmax = V(xs, L, W);
+    sh = { L, W, mode, xs, vmax, x: r1(W / 8), cx: 0, falling: 0 };
+    if (mode === 'tgt') sh.T = Math.round(vmax * K.rand(0.5, 0.85) / 10) * 10;
+    sh.cx = -geo().s * L / 2 + 30;
+    phase = 'ride'; pt = 0; drag = null; res = null; missed = false;
+    window.BF.sheet = sh;
+  }
+  function geo() { return { s: Math.min(290 / sh.L, 250 / sh.W) }; }
+  function dragTo(x, y) {
+    if (drag.slider) return setX(K.clamp((x - slider.x0) / (slider.x1 - slider.x0), 0, 1) * xMax());
+    const s = geo().s;
+    const cx = sh.cx + drag.sx * s * sh.L / 2, cy = CY + drag.sy * s * sh.W / 2;
+    setX(((x - cx) * -drag.sx + (y - cy) * -drag.sy) / 2 / s);
+  }
+  function fold() {
+    if (phase !== 'ride') return;
+    phase = 'fold'; pt = 0; drag = null;
+    sh.from = sh.cx;
+    const s = geo().s;
+    // the cut corners drop off as scraps
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      scraps.push({ x: sh.cx + sx * s * (sh.L / 2 - sh.x / 2), y: CY + sy * s * (sh.W / 2 - sh.x / 2), vx: sx * K.rand(40, 120), vy: K.rand(-160, -60), rot: 0, vr: K.rand(-8, 8), size: s * sh.x, life: 1.4 });
+    }
+    K.sfx.pop(); K.sfx.whoosh();
+    const q = quality(sh.x), g = GRADES[sh.mode];
+    const grade = q >= g[0] ? 0 : q >= g[1] ? 1 : q >= g[2] ? 2 : 3;
+    const pts = [100, 70, 40, 0][grade];
+    streak = grade <= 1 ? streak + 1 : 0;
+    const bonus = grade <= 1 ? Math.min(50, (streak - 1) * 10) : 0;
+    res = { q, grade, pts: pts + bonus, bonus, v: V(sh.x, sh.L, sh.W) };
+    window.BF.last = res;
+  }
+  function finishFold() {
+    phase = 'result'; pt = 0;
+    const r = res;
+    score += r.pts;
+    const word = ['PERFECT!', 'GREAT!', 'GOOD', sh.mode === 'max' ? 'FLIMSY BOX' : 'WRONG SIZE'][r.grade];
+    const col = ['#ffd34d', '#7ee36b', '#4fd1ff', '#ff5d73'][r.grade];
+    K.float(210, CY - 150, word, col, 34);
+    if (r.pts) K.float(210, CY - 112, `+${r.pts}${r.bonus ? ` (streak ×${streak})` : ''}`, '#fff', 20);
+    if (r.grade === 3) { lives--; K.sfx.bad(); K.shake(10); K.flash('#ff5d73'); }
+    else { K.sfx[r.grade === 0 ? 'win' : 'good'](); K.burst(210, CY, col, r.grade === 0 ? 46 : 26, 340, 5); if (!r.grade) K.flash('#ffd34d', 0.2); }
+  }
+  function miss() {
+    phase = 'miss'; pt = 0; lives--; streak = 0; missed = true;
+    K.sfx.boom(); K.shake(12); K.flash('#ff5d73');
+    K.float(640, 200, 'MISSED!', '#ff5d73', 34);
+    K.burst(CHUTE + 10, CY, '#ff9f43', 30, 300);
+  }
+  function next() {
+    if (phase === 'result') { phase = 'exit'; pt = 0; K.sfx.whoosh(); return; }
+    if (lives <= 0) return K.gameOver(score, { title: 'Factory closed', msg: `You reached level ${lvl + 1}. The best cut is where the volume graph is flat at the top: V′(x) = 0.` });
+    if (idx + 1 >= PER && lvl + 1 >= LEVELS.length) return K.gameOver(score + lives * 100, { kicker: 'All orders shipped!', title: 'Box boss!', msg: `Score ${score} + ${lives} lives × 100 bonus.` });
+    if (++idx >= PER) { lvl++; return startLevel(); }
+    newSheet();
+  }
+
+  function update(dt) {
+    pt += dt;
+    if (banner) { banner.t += dt; if (banner.t > 2) banner = null; }
+    for (let i = scraps.length - 1; i >= 0; i--) {
+      const p = scraps[i]; p.life -= dt; if (p.life <= 0) { scraps.splice(i, 1); continue; }
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * dt; p.rot += p.vr * dt;
+    }
+    const v = LEVELS[lvl].v;
+    if (phase === 'ride') {
+      sh.cx += v * dt; beltOff += v * dt;
+      if (drag && !drag.slider) dragTo(K.ptr.x, K.ptr.y); // keep the cut glued to the pointer while the sheet moves
+      if (sh.cx + geo().s * sh.L / 2 > CHUTE) miss();
+    } else if (phase === 'fold') {
+      sh.cx = K.lerp(sh.from, 210, K.ease(Math.min(1, pt / 1.1)));
+      const prev = pt - dt;
+      for (const tt of [0.95, 1.35]) if (prev < tt && pt >= tt) { K.sfx.note(tt < 1 ? 196 : 247, 0.12); K.shake(2); }
+      if (pt > 1.75) finishFold();
+    } else if (phase === 'result') {
+      if (pt > 6) next();
+    } else if (phase === 'exit') {
+      sh.cx += 700 * dt; beltOff += 700 * dt;
+      if (sh.cx > 1000) next();
+    } else if (phase === 'miss') {
+      sh.cx += v * dt; sh.falling += dt;
+      if (pt > 1.1) next();
+    }
+  }
+
+  // ---------- 3D cardboard ----------
+  // Base is a×b centered at 0, flaps of height x hinge on its edges. th1: front/back flaps, th2: side flaps (radians, 0 = flat).
+  function drawSheet3D(c, cx, cy, s, L, W, x, th1, th2, phi, psi) {
+    const a = L - 2 * x, b = W - 2 * x, cp = Math.cos(psi), sp = Math.sin(psi), cf = Math.cos(phi), sf = Math.sin(phi);
+    const P = ([X, Y, Z]) => { const X2 = X * cp - Y * sp, Y2 = X * sp + Y * cp; return [cx + s * X2, cy + s * (Y2 * cf - Z * sf), Y2 * sf + Z * cf]; };
+    const c1 = Math.cos(th1), s1 = Math.sin(th1), c2 = Math.cos(th2), s2 = Math.sin(th2);
+    const A = a / 2, B = b / 2;
+    const faces = [
+      { p: [[-A, B, 0], [A, B, 0], [A, B + x * c1, x * s1], [-A, B + x * c1, x * s1]], n: [0, -s1, c1] },
+      { p: [[-A, -B - x * c1, x * s1], [A, -B - x * c1, x * s1], [A, -B, 0], [-A, -B, 0]], n: [0, s1, c1] },
+      { p: [[A, -B, 0], [A + x * c2, -B, x * s2], [A + x * c2, B, x * s2], [A, B, 0]], n: [-s2, 0, c2] },
+      { p: [[-A - x * c2, -B, x * s2], [-A, -B, 0], [-A, B, 0], [-A - x * c2, B, x * s2]], n: [s2, 0, c2] },
+    ].map(f => { const q = f.p.map(P); return { q, n: f.n, d: q.reduce((m, p) => m + p[2], 0) / 4 }; });
+    faces.sort((f, g) => f.d - g.d);
+    const base = { q: [[-A, -B, 0], [A, -B, 0], [A, B, 0], [-A, B, 0]].map(P), n: [0, 0, 1] };
+    const light = [-0.35, 0.45, 0.82];
+    for (const f of [base, ...faces]) {
+      const q = f.q;
+      let area = 0;
+      for (let i = 0; i < 4; i++) { const p = q[i], r = q[(i + 1) % 4]; area += p[0] * r[1] - r[0] * p[1]; }
+      const front = area > 0, sign = front ? 1 : -1;
+      const lit = (f.n[0] * light[0] + f.n[1] * light[1] + f.n[2] * light[2]) * sign;
+      c.beginPath(); q.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]))); c.closePath();
+      c.fillStyle = shade(front ? KRAFT : KRAFT_OUT, (lit - 0.7) * 0.6);
+      c.fill();
+      c.strokeStyle = 'rgba(70,40,15,.55)'; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke();
+      if (f === base) { // corrugation hint
+        c.save(); c.clip(); c.strokeStyle = 'rgba(120,70,30,.12)'; c.lineWidth = 1;
+        const [p0, p1, , p3] = q;
+        for (let k = 1; k < 14; k++) { const t = k / 14; c.beginPath(); c.moveTo(K.lerp(p0[0], p3[0], t), K.lerp(p0[1], p3[1], t)); c.lineTo(K.lerp(p1[0], p1[0] + p3[0] - p0[0], t), K.lerp(p1[1], p1[1] + p3[1] - p0[1], t)); c.stroke(); }
+        c.restore();
+      }
+    }
+    return P;
+  }
+  const shade = (hex, amt) => K.shade(hex, Math.max(-0.6, Math.min(0.5, amt)));
+
+  // ---------- drawing ----------
+  function drawBelt(c) {
+    c.fillStyle = '#141826'; c.fillRect(0, BELT_Y0, 800, BELT_Y1 - BELT_Y0);
+    const g = c.createLinearGradient(0, BELT_Y0, 0, BELT_Y1);
+    g.addColorStop(0, '#2a3046'); g.addColorStop(0.5, '#353c56'); g.addColorStop(1, '#262b40');
+    c.fillStyle = g; c.fillRect(0, BELT_Y0 + 8, CHUTE, BELT_Y1 - BELT_Y0 - 16);
+    c.fillStyle = 'rgba(255,255,255,.05)';
+    const off = beltOff % 48;
+    for (let x = -48 + off; x < CHUTE; x += 48) c.fillRect(x, BELT_Y0 + 8, 3, BELT_Y1 - BELT_Y0 - 16);
+    for (let x = (beltOff % 40) - 20; x < CHUTE; x += 40) for (const y of [BELT_Y0 + 4, BELT_Y1 - 4]) K.orb(c, x, y, 4, '#8a93b8', { glow: 0 });
+    // chute with hazard stripes
+    c.save(); c.beginPath(); c.rect(CHUTE, BELT_Y0, 800 - CHUTE, BELT_Y1 - BELT_Y0); c.clip();
+    c.fillStyle = '#05060c'; c.fillRect(CHUTE, BELT_Y0, 30, BELT_Y1 - BELT_Y0);
+    for (let y = BELT_Y0 - 30; y < BELT_Y1; y += 22) { c.fillStyle = '#ffcf33'; c.beginPath(); c.moveTo(CHUTE, y); c.lineTo(800, y + 28); c.lineTo(800, y + 39); c.lineTo(CHUTE, y + 11); c.fill(); }
+    c.restore();
+    c.fillStyle = 'rgba(255,93,115,.85)'; c.fillRect(CHUTE - 3, BELT_Y0, 3, BELT_Y1 - BELT_Y0);
+  }
+
+  function drawRide(c) {
+    const s = geo().s, L = sh.L, W = sh.W, x = sh.x, cx = sh.cx;
+    if (phase === 'miss') {
+      c.save(); const k = sh.falling; c.translate(cx + sh.L * s / 2, CY); c.rotate(k * 1.6); c.globalAlpha = Math.max(0, 1 - k); c.translate(-(sh.L * s / 2), k * 200);
+      drawSheet3D(c, 0, 0, s, L, W, x, 0, 0, 0, 0); c.restore(); return;
+    }
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(cx - s * L / 2 + 8, CY - s * W / 2 + 10, s * L, s * W);
+    drawSheet3D(c, cx, CY, s, L, W, x, 0, 0, 0, 0);
+    // fold lines
+    const A = s * (L / 2 - x), B = s * (W / 2 - x);
+    c.save(); c.setLineDash([7, 6]); c.strokeStyle = 'rgba(80,45,15,.7)'; c.lineWidth = 1.5;
+    c.strokeRect(cx - A, CY - B, 2 * A, 2 * B); c.restore();
+    // cut squares
+    const q = s * x;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const ox = cx + sx * s * L / 2, oy = CY + sy * s * W / 2, x0 = Math.min(ox, ox - sx * q), y0 = Math.min(oy, oy - sy * q);
+      const hot = drag && drag.sx === sx && drag.sy === sy;
+      c.save(); c.setLineDash([5, 4]); c.lineWidth = 2; c.strokeStyle = hot ? '#fff' : '#ff6b8b';
+      c.fillStyle = hot ? 'rgba(255,107,139,.35)' : 'rgba(255,107,139,.16)';
+      c.fillRect(x0, y0, q, q); c.strokeRect(x0, y0, q, q); c.restore();
+      K.orb(c, ox - sx * q, oy - sy * q, hot ? 8 : 6 + Math.sin(K.t * 5) * 1, '#ff6b8b');
+    }
+    // labels
+    K.text(`${L} cm`, cx, CY - s * W / 2 - 14, 14, '#ffe2bf', { weight: 700, stroke: 4 });
+    K.text(`${W} cm`, cx - s * L / 2 - 30, CY, 14, '#ffe2bf', { weight: 700, stroke: 4 });
+    if (q > 12) K.text('x', cx - s * L / 2 + q / 2, CY - s * W / 2 + q / 2, Math.min(18, q * 0.7), '#fff', { weight: 800, stroke: 3 });
+  }
+
+  function drawFoldAndBox(c) {
+    const s = geo().s;
+    const t = phase === 'fold' ? pt : 99;
+    const th1 = K.back(K.clamp((t - 0.35) / 0.6, 0, 1)) * Math.PI / 2;
+    const th2 = K.back(K.clamp((t - 0.75) / 0.6, 0, 1)) * Math.PI / 2;
+    const cam = K.ease(K.clamp((t - 0.1) / 1.1, 0, 1));
+    const spin = phase === 'result' ? Math.sin(K.t * 0.8) * 0.12 : 0;
+    const phi = cam * 0.95, psi = cam * -0.45 + spin;
+    const sc = s * K.lerp(1, 0.85, cam);
+    c.fillStyle = `rgba(0,0,0,${0.25 * cam + 0.1})`;
+    c.beginPath(); c.ellipse(sh.cx + 8, CY + 18, sc * sh.L * 0.45, sc * sh.W * 0.32, 0, 0, 7); c.fill();
+    drawSheet3D(c, sh.cx, CY + 20 * cam, sc, sh.L, sh.W, sh.x, th1, th2, phi, psi);
+  }
+
+  function drawGraph(c) {
+    const k = K.ease(Math.min(1, pt / 0.45));
+    const ox = (1 - k) * 380;
+    c.save(); c.translate(ox, 0);
+    K.panel(c, GP.x, GP.y, GP.w, GP.h, { fill: 'rgba(8,11,26,.9)', glow: 18, glowColor: 'rgba(255,176,87,.35)' });
+    K.text(`V(x) = x(${sh.L} − 2x)(${sh.W} − 2x)`, GP.x + GP.w / 2, GP.y + 22, 15, '#ffd9a8', { weight: 700 });
+    const X0 = GP.x + 52, X1 = GP.x + GP.w - 18, Y0 = GP.y + 50, Y1 = GP.y + GP.h - 84;
+    const xm = sh.W / 2, ym = Math.max(sh.vmax, sh.T || 0) * 1.18;
+    const px = v => X0 + (v / xm) * (X1 - X0), py = v => Y1 - (v / ym) * (Y1 - Y0);
+    c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(X0, Y0); c.lineTo(X0, Y1); c.lineTo(X1, Y1); c.stroke();
+    K.text('x (cm)', X1 - 20, Y1 + 30, 11, 'rgba(220,228,250,.6)');
+    K.text('V', X0 - 14, Y0 + 4, 12, 'rgba(220,228,250,.6)');
+    for (let i = 0; i <= xm; i += xm > 12 ? 4 : 2) K.text(String(i), px(i), Y1 + 12, 10, 'rgba(220,228,250,.55)', { weight: 500 });
+    K.text(String(Math.round(sh.vmax)), X0 - 26, py(sh.vmax), 10, '#ffd34d', { weight: 600 });
+    // curve, drawn in progressively
+    const reveal = K.clamp((pt - 0.3) / 0.9, 0, 1), pts = [];
+    for (let i = 0; i <= 120 * reveal; i++) { const xv = (i / 120) * xm; pts.push([px(xv), py(V(xv, sh.L, sh.W))]); }
+    if (pts.length > 1) K.glowLine(c, pts, '#ffb057', 3, 12);
+    if (sh.mode === 'tgt') {
+      c.save(); c.setLineDash([6, 5]); c.strokeStyle = '#ff6bd6'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(X0, py(sh.T)); c.lineTo(X1, py(sh.T)); c.stroke(); c.restore();
+      K.text(`target ${sh.T}`, X1 - 40, py(sh.T) - 10, 11, '#ff9be6', { weight: 700 });
+    }
+    if (reveal >= 1) {
+      const pk = K.clamp((pt - 1.2) / 0.4, 0, 1);
+      const X = px(sh.xs), Y = py(sh.vmax);
+      if (sh.mode === 'max') {
+        c.save(); c.globalAlpha = pk; c.strokeStyle = '#ffd34d'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(X - 60 * pk, Y); c.lineTo(X + 60 * pk, Y); c.stroke();
+        c.setLineDash([3, 4]); c.beginPath(); c.moveTo(X, Y); c.lineTo(X, Y1); c.stroke(); c.restore();
+        K.orb(c, X, Y, 6 + Math.sin(K.t * 6) * 1.2 * pk, '#ffd34d');
+        c.globalAlpha = pk; K.text('slope 0', X + 34, Y - 12, 11, '#ffd34d', { weight: 700 }); c.globalAlpha = 1;
+      } else {
+        for (const root of roots()) K.orb(c, px(root), py(sh.T), 5, '#ff6bd6');
+      }
+      const ux = px(sh.x), uy = py(res.v);
+      c.save(); c.setLineDash([3, 4]); c.strokeStyle = '#4fd1ff'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(ux, uy); c.lineTo(ux, Y1); c.stroke(); c.restore();
+      K.orb(c, ux, uy, 7, '#4fd1ff');
+      K.text('you', ux, uy - 16, 11, '#9fe6ff', { weight: 700 });
+    }
+    // read-out
+    const ly = GP.y + GP.h - 54;
+    if (sh.mode === 'max') {
+      K.text(`Best: x = ${sh.xs.toFixed(2)} cm → V = ${Math.round(sh.vmax)} cm³`, GP.x + GP.w / 2, ly, 13, '#ffd34d', { weight: 600 });
+      K.text(`You: x = ${sh.x.toFixed(1)} cm → V = ${Math.round(res.v)} cm³ (${(res.q * 100).toFixed(1)}%)`, GP.x + GP.w / 2, ly + 20, 13, '#9fe6ff', { weight: 600 });
+    } else {
+      const rs = roots();
+      K.text(`Target ${sh.T} cm³ at x ≈ ${rs.map(v => v.toFixed(2)).join(' or ')}`, GP.x + GP.w / 2, ly, 13, '#ff9be6', { weight: 600 });
+      K.text(`You: x = ${sh.x.toFixed(1)} cm → V = ${Math.round(res.v)} cm³ (${(res.q * 100).toFixed(1)}%)`, GP.x + GP.w / 2, ly + 20, 13, '#9fe6ff', { weight: 600 });
+    }
+    K.text(lives > 0 ? 'Tap or press Space for the next sheet' : 'Tap to finish', GP.x + GP.w / 2, ly + 42, 11, 'rgba(220,228,250,.55)', { weight: 500 });
+    c.restore();
+  }
+  function roots() { // x values where V(x) = target (one on each side of the peak)
+    const out = [], f = v => V(v, sh.L, sh.W) - sh.T;
+    for (const [lo0, hi0] of [[0, sh.xs], [sh.xs, sh.W / 2]]) {
+      let lo = lo0, hi = hi0, flo = f(lo);
+      for (let i = 0; i < 50; i++) { const m = (lo + hi) / 2; if ((f(m) > 0) === (flo > 0)) { lo = m; flo = f(m); } else hi = m; }
+      out.push((lo + hi) / 2);
+    }
+    return out;
+  }
+
+  function drawHud(c) {
+    K.chip(16, 12, 'Level', `${lvl + 1} / ${LEVELS.length}`, '#fff', { w: 92, h: 52 });
+    K.chip(116, 12, 'Score', score, '#ffd34d', { w: 100, h: 52 });
+    K.panel(c, 224, 12, 96, 52, { r: 12 });
+    K.text('LIVES', 272, 26, 10, 'rgba(210,218,245,.65)');
+    for (let i = 0; i < 3; i++) { c.globalAlpha = i < lives ? 1 : 0.2; K.tile(c, 241 + i * 22, 36, 18, 16, KRAFT, { r: 3, depth: 3 }); c.globalAlpha = 1; }
+    K.panel(c, 330, 12, 454, 52, { r: 12, glow: 10, glowColor: sh.mode === 'max' ? 'rgba(255,176,87,.4)' : 'rgba(255,107,214,.4)' });
+    const goal = sh.mode === 'max' ? 'ORDER: the BIGGEST box possible' : `ORDER: a box of exactly ${sh.T} cm³`;
+    K.text(goal, 557, 31, 16, sh.mode === 'max' ? '#ffd9a8' : '#ffb3ee', { weight: 800 });
+    K.text(`Sheet ${sh.L} × ${sh.W} cm   ·   sheet ${idx + 1} of ${PER}`, 557, 52, 11, 'rgba(220,228,250,.6)', { weight: 600 });
+    if (phase !== 'ride') return;
+    // bottom controls
+    const a = r1(sh.L - 2 * sh.x), b = r1(sh.W - 2 * sh.x);
+    const showV = LEVELS[lvl].showV;
+    K.text(`x = ${sh.x.toFixed(1)} cm   →   box ${a} × ${b} × ${sh.x.toFixed(1)}   →   V = ${showV ? Math.round(V(sh.x, sh.L, sh.W)) : '?'} cm³`, 370, 482, 16, '#fff', { weight: 700 });
+    c.fillStyle = 'rgba(255,255,255,.12)'; K.rr(c, slider.x0, slider.y - 5, slider.x1 - slider.x0, 10, 5); c.fill();
+    const f = sh.x / xMax(), hx = K.lerp(slider.x0, slider.x1, f);
+    c.fillStyle = '#ff6b8b'; K.rr(c, slider.x0, slider.y - 5, hx - slider.x0, 10, 5); c.fill();
+    K.orb(c, hx, slider.y, 13, '#ff6b8b');
+    K.text('cut x', slider.x0 - 40, slider.y, 13, 'rgba(220,228,250,.7)');
+    K.text('0', slider.x0, slider.y + 22, 10, 'rgba(220,228,250,.5)');
+    K.text(`${r1(sh.W / 2)}`, slider.x1, slider.y + 22, 10, 'rgba(220,228,250,.5)');
+    const danger = (sh.cx + geo().s * sh.L / 2) / CHUTE;
+    K.button(Object.assign(foldBtn, { color: danger > 0.85 && Math.sin(K.t * 14) > 0 ? '#ff6b8b' : '#ffb057', glow: danger > 0.85 ? 20 : 0 }));
+  }
+
+  function draw(c, t) {
+    if (!sh) { // menu: a spinning finished box
+      beltOff = (t * 30) % 4800; drawBelt(c);
+      drawSheet3D(c, 400, 300, 9, 30, 22, 4.3, Math.PI / 2, Math.PI / 2, 0.95, t * 0.5);
+      return;
+    }
+    drawBelt(c);
+    if (phase === 'ride' || phase === 'miss') drawRide(c); else drawFoldAndBox(c);
+    for (const p of scraps) {
+      c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = Math.min(1, p.life * 2);
+      c.fillStyle = KRAFT; c.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+      c.strokeStyle = 'rgba(70,40,15,.6)'; c.strokeRect(-p.size / 2, -p.size / 2, p.size, p.size); c.restore();
+    }
+    if (phase === 'result') drawGraph(c);
+    drawHud(c);
+    if (banner) {
+      const k = banner.t, a = Math.min(1, k * 4, (2 - k) * 3), sc = K.back(Math.min(1, k * 3));
+      c.globalAlpha = a;
+      K.text(banner.title, 400, 230, 54 * sc, '#fff', { weight: 800, glow: 24, glowColor: '#ffb057', stroke: 6 });
+      K.text(banner.sub, 400, 280, 20, '#ffd9a8', { weight: 700, stroke: 5 });
+      c.globalAlpha = 1;
+    }
+  }
+
+  // test hooks
+  window.BF = {
+    get phase() { return phase; }, get lives() { return lives; }, get score() { return score; }, get level() { return lvl; },
+    setX: v => { sh.x = K.clamp(r1(v), 0.2, r1(xMax())); }, fold, next,
+    best: () => sh.mode === 'max' ? sh.xs : roots()[0],
+  };
+})();
+</script>
+</body>
+</html>

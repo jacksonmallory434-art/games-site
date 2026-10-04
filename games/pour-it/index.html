@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pour It</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Containers: ['cyl', r, h] ['cone', r, h] (point down) ['sph', r] ['box', l, w, h] ['pyr', l, w, h] (point up)
+  // ['tri', b, h, L] (trough, point down). Tanks may end with {line: n} = fill only up to height n.
+  // Each level is a list of stages; src 'prev' = the tank you just filled becomes the next source.
+  const LEVELS = [
+    { tip: 'Find the tank that holds exactly as much as the jug. Drag the jug onto it.',
+      stages: [{ src: [['cyl', 2, 3]], tanks: [['cyl', 2, 2], ['cyl', 1, 12], ['cyl', 3, 2]] }] },
+    { tip: 'Boxes: volume = length × width × height.',
+      stages: [{ src: [['box', 2, 3, 4]], tanks: [['box', 3, 3, 3], ['box', 5, 1, 4], ['box', 2, 2, 6]] }] },
+    { tip: 'A cone holds one third of a cylinder with the same r and h.',
+      stages: [{ src: [['cyl', 3, 2]], tanks: [['cone', 3, 2], ['cyl', 3, 3], ['cone', 3, 6]] }] },
+    { tip: 'A pyramid is one third of a box. A triangle prism is half a box.',
+      stages: [{ src: [['box', 3, 4, 2]], tanks: [['tri', 4, 4, 4], ['pyr', 6, 6, 2], ['box', 2, 2, 5], ['pyr', 4, 4, 3]] }] },
+    { tip: 'Sphere: V = 4/3 × π × r³.',
+      stages: [{ src: [['cyl', 3, 4]], tanks: [['cone', 3, 8], ['cyl', 2, 10], ['sph', 3]] }] },
+    { tip: 'Fill the tank exactly to the dashed line. Pick the right jug!',
+      stages: [{ src: [['cone', 4, 6], ['cyl', 2, 12], ['sph', 3]], tanks: [['cyl', 4, 6, { line: 3 }]] }] },
+    { tip: 'Fill the tank to the brim. You can pour several jugs in, but don\'t overflow!',
+      stages: [{ src: [['box', 2, 3, 5], ['pyr', 3, 3, 4], ['tri', 3, 4, 3], ['box', 2, 2, 5], ['pyr', 6, 6, 2]], tanks: [['box', 4, 5, 3]] }] },
+    { tip: 'Chain pour: the tank you fill becomes the next jug.',
+      stages: [{ src: [['cyl', 2, 9]], tanks: [['cone', 3, 9], ['sph', 3], ['cyl', 3, 3]] },
+               { src: 'prev', tanks: [['cyl', 4, 2], ['cone', 6, 2], ['cone', 3, 12]] }] },
+    { tip: 'Mix jugs to hit the line exactly.',
+      stages: [{ src: [['sph', 3], ['cone', 3, 6], ['cyl', 1, 7], ['cone', 2, 6]], tanks: [['cyl', 3, 8, { line: 6 }]] }] },
+    { tip: 'Big finale: two pours in a row.',
+      stages: [{ src: [['sph', 6]], tanks: [['cyl', 4, 16], ['cyl', 6, 8], ['cone', 6, 20]] },
+               { src: 'prev', tanks: [['cyl', 8, 4], ['cone', 12, 5], ['cone', 6, 24]] }] },
+  ];
+
+  const NAMES = { cyl: 'Cylinder', cone: 'Cone', sph: 'Sphere', box: 'Box', pyr: 'Pyramid', tri: 'Prism' };
+  const PI = { cyl: 1, cone: 1, sph: 1 };
+  const BASE = 492, SRC_BASE = 236;
+
+  function make(spec) {
+    const [k, a, b, c] = spec, opt = typeof spec[spec.length - 1] === 'object' ? spec[spec.length - 1] : {};
+    const s = { k, d: spec.slice(1).filter(v => typeof v === 'number'), pi: !!PI[k], vol: 0, sum: 0, rev: false };
+    s.cap = { cyl: a * a * b, cone: a * a * b / 3, sph: 4 * a ** 3 / 3, box: a * b * c, pyr: a * b * c / 3, tri: a * b * c / 2 }[k];
+    s.H = { cyl: b, cone: b, sph: 2 * a, box: c, pyr: c, tri: b }[k];          // height in units
+    s.Wd = { cyl: 2 * a, cone: 2 * a, sph: 2 * a, box: a, pyr: a, tri: a }[k];   // front width in units
+    s.depth = { box: b, pyr: b, tri: c }[k] || 0;
+    s.line = opt.line;
+    s.target = s.line ? (k === 'box' ? a * b * s.line : a * a * s.line) : s.cap;
+    return s;
+  }
+  const fmt = (v, pi) => pi ? (v === 1 ? 'π' : v + 'π') : String(v);
+  function label(s) {
+    const [a, b, c] = s.d;
+    return { cyl: `r=${a}  h=${b}`, cone: `r=${a}  h=${b}`, sph: `r=${a}`, box: `${a}×${b}×${c}`, pyr: `base ${a}×${b}  h=${c}`, tri: `triangle ${a}, h=${b}  long ${c}` }[s.k];
+  }
+  function work(s) {
+    const [a, b, c] = s.d;
+    if (s.line) return (s.k === 'box' ? `${a}·${b}·${s.line}` : `π·${a}²·${s.line}`) + ' = ' + fmt(s.target, s.pi);
+    return { cyl: `π·${a}²·${b}`, cone: `⅓·π·${a}²·${b}`, sph: `⁴⁄₃·π·${a}³`, box: `${a}·${b}·${c}`, pyr: `⅓·${a}·${b}·${c}`, tri: `½·${a}·${b}·${c}` }[s.k] + ' = ' + fmt(s.cap, s.pi);
+  }
+  // fraction of width at height fraction y (0 bottom .. 1 top)
+  const widthAt = (s, y) => ({ cyl: 1, box: 1, cone: y, tri: y, pyr: 1 - y, sph: 2 * Math.sqrt(Math.max(0, y * (1 - y))) }[s.k]);
+  // height fraction of water when the container is fraction f full
+  function levelAt(s, f) {
+    f = K.clamp(f, 0, 1);
+    if (s.k === 'cone') return Math.cbrt(f);
+    if (s.k === 'tri') return Math.sqrt(f);
+    if (s.k === 'pyr') return 1 - Math.cbrt(1 - f);
+    if (s.k === 'sph') { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; (m * m * (3 - 2 * m) < f ? lo = m : hi = m); } return lo; }
+    return f;
+  }
+
+  let lv = 0, stage = 0, hearts = 3, srcs = [], tanks = [], u = 10, pour = null, drag = null, sel = 0, busy = false, msg = '', msgCol = '#fff', gap = null, saved;
+
+  const K = window.K = MA.game({
+    slug: 'pour-it', title: 'Pour It', accent: '#4fc3ff', accent2: '#7cf0d0', bg: ['#08182e', '#0d1030'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play' || busy) return;
+      const si = srcs.findIndex(s => s.vol > 0 && near(s, x, y));
+      if (si >= 0) { drag = { si, x, y, sx: x, sy: y, moved: false }; return; }
+      const ti = tankAt(x, y);
+      if (ti >= 0 && srcs[sel] && srcs[sel].vol > 0) startPour(sel, ti);
+    },
+    move(x, y) { if (drag) { drag.x = x; drag.y = y; if (Math.hypot(x - drag.sx, y - drag.sy) > 8) drag.moved = true; } },
+    up(x, y) {
+      if (!drag) return;
+      const d = drag; drag = null;
+      const ti = tankAt(x, y);
+      if (d.moved && ti >= 0) startPour(d.si, ti, x, y);
+      else if (!d.moved) { sel = d.si; K.sfx.click(); }
+    },
+    key(k) {
+      if (K.state !== 'play' || busy) return;
+      const live = srcs.map((s, i) => s.vol > 0 ? i : -1).filter(i => i >= 0);
+      if (k === 'ArrowLeft' || k === 'ArrowRight') {
+        const j = live.indexOf(sel), n = live.length;
+        sel = live[((j < 0 ? 0 : j) + (k === 'ArrowRight' ? 1 : n - 1)) % n]; K.sfx.tick();
+      }
+      const n = parseInt(k, 10);
+      if (n >= 1 && n <= tanks.length && srcs[sel] && srcs[sel].vol > 0) startPour(sel, n - 1);
+    },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Pour It',
+      sub: 'Pour the water into the tank it fills <b>exactly</b>. Too big and you come up short. Too small and it spills!',
+      how: ['Drag a jug onto a tank (or tap the jug, then the tank). Keys: ←/→ pick a jug, 1-4 pour.',
+        'Cylinder <b>πr²h</b>, cone <b>⅓πr²h</b>, sphere <b>⁴⁄₃πr³</b>, box <b>l·w·h</b>, pyramid <b>⅓·l·w·h</b>, triangle prism <b>½·b·h·length</b>.',
+        'You have 3 hearts per level. A spill or a short pour costs one.'],
+      html: `<p class="ma-best">${saved.filter(Boolean).reduce((a, b) => a + b, 0)} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function load(i) { lv = i; hearts = 3; stage = 0; setStage(null); }
+  function setStage(prev) {
+    const st = LEVELS[lv].stages[stage];
+    srcs = st.src === 'prev' ? [prev] : st.src.map(make);
+    srcs.forEach(s => { s.vol = s.cap; s.sum = 0; });
+    tanks = st.tanks.map(make);
+    sel = 0; pour = null; drag = null; busy = false; gap = null;
+    msg = LEVELS[lv].tip; msgCol = 'rgba(220,228,250,.85)';
+    // one scale for the whole stage so sizes compare honestly
+    const tw = Math.min(800 / tanks.length - 50, 190), sw = Math.min(760 / srcs.length - 40, 150);
+    u = Math.min(22, ...tanks.map(t => Math.min(190 / t.H, tw / (t.Wd + t.depth * 0.35))), ...srcs.map(s => Math.min(118 / s.H, sw / (s.Wd + s.depth * 0.35))));
+    layout();
+  }
+  function layout() {
+    tanks.forEach((t, i) => { t.x = 800 * (i + 0.5) / tanks.length; t.y = BASE; });
+    srcs.forEach((s, i) => { s.hx = 800 * (i + 0.5) / srcs.length; s.hy = SRC_BASE; if (!s.moving) { s.x = s.hx; s.y = s.hy; s.rot = 0; } });
+  }
+  const dims = s => ({ w: s.Wd * u, h: s.H * u, dp: s.depth * u * 0.35 });
+  function near(s, x, y) { const { w, h, dp } = dims(s); return x > s.x - w / 2 - 14 && x < s.x + w / 2 + dp + 14 && y > s.y - h - dp - 14 && y < s.y + 14; }
+  function tankAt(x, y) {
+    const n = tanks.length;
+    if (y < 270 || y > 590) return -1;
+    return K.clamp(Math.floor(x / (800 / n)), 0, n - 1);
+  }
+
+  function startPour(si, ti, dx, dy) {
+    const s = srcs[si], t = tanks[ti];
+    const { w, h } = dims(s), th = dims(t).h;
+    busy = true; sel = si; gap = null;
+    s.moving = true;
+    const side = t.x < 400 ? 1 : -1; // tip toward the tank's center
+    pour = { s, t, si, ti, side, T: 0, x0: dx ?? s.x, y0: dy != null ? dy + h / 2 : s.y, amt: s.vol, flowed: 0,
+      px: K.clamp(t.x - side * (w / 2 + 16), w / 2 + 8, 792 - w / 2), py: Math.max(h / 2 + 70, BASE - th - 24 - Math.max(w, h) / 2) };
+    s.sum = 0;
+    K.sfx.whoosh();
+  }
+
+  const MOVE = 0.45, FLOW = 1.5, BACK = 0.4;
+  function update(dt) {
+    if (!pour) return;
+    const p = pour, s = p.s, t = p.t;
+    p.T += dt;
+    const { h } = dims(s);
+    if (p.T < MOVE) {
+      const e = K.ease(p.T / MOVE);
+      s.x = K.lerp(p.x0, p.px, e); s.y = K.lerp(p.y0, p.py + h / 2, e); s.rot = p.side * 1.75 * e;
+    } else if (p.T < MOVE + FLOW) {
+      const want = p.amt * K.ease((p.T - MOVE) / FLOW), d = want - p.flowed;
+      p.flowed = want; s.vol = p.amt - want; t.vol += d;
+      if (t.vol > t.cap) {
+        t.vol = t.cap;
+        if (Math.random() < dt * 30) { const { w } = dims(t); K.burst(t.x + K.pick([-1, 1]) * w / 2, t.y - dims(t).h, '#4fc3ff', 3, 120, 3, false); }
+      }
+      if (Math.random() < dt * 14) K.sfx.note(300 + 500 * t.vol / t.cap, 0.04);
+    } else if (!p.done) {
+      p.done = true; s.vol = 0; t.sum += p.amt; t.vol = Math.min(t.cap, t.sum);
+      judge(p);
+    } else if (p.T < MOVE + FLOW + BACK) {
+      const e = K.ease((p.T - MOVE - FLOW) / BACK);
+      s.x = K.lerp(p.px, s.hx, e); s.y = K.lerp(p.py + h / 2, s.hy, e); s.rot = p.side * 1.75 * (1 - e);
+    } else { s.x = s.hx; s.y = s.hy; s.rot = 0; s.moving = false; pour = null; if (p.after) p.after(); else busy = false; }
+  }
+
+  function judge(p) {
+    const t = p.t, s = p.s;
+    t.rev = true; s.rev = true;
+    K.float(t.x, t.y - dims(t).h - 30, work(t), '#cfe9ff', 18);
+    if (t.sum === t.target) {
+      K.burst(t.x, t.y - dims(t).h * 0.6, '#7cf0d0', 36, 320, 5); K.burst(t.x, t.y - dims(t).h * 0.6, '#ffd34d', 20, 260);
+      K.sfx.win(); K.flash('#7cf0d0', 0.2);
+      msg = 'Exactly full!'; msgCol = '#7cf0d0';
+      p.after = () => setTimeout(() => clearStage(t), 700);
+      return;
+    }
+    const left = srcs.some(x => x.vol > 0);
+    if (t.sum > t.target) {
+      K.sfx.boom(); K.shake(10);
+      const over = t.sum - t.target;
+      msg = t.sum > t.cap ? `Spilled ${fmt(over, t.pi)} — that jug was too big for this tank.` : `Over the line by ${fmt(over, t.pi)}!`;
+      msgCol = '#ff5d73';
+      for (let i = 0; i < 4; i++) K.burst(t.x + K.rand(-1, 1) * dims(t).w / 2, t.y - dims(t).h, '#4fc3ff', 8, 220, 4, false);
+      fail();
+    } else if (!left) {
+      K.sfx.bad(); K.shake(5);
+      gap = t;
+      msg = `Short by ${fmt(t.target - t.sum, t.pi)} — that tank is too big.`; msgCol = '#ffd34d';
+      fail();
+    } else { K.sfx.pop(); msg = `${fmt(t.target - t.sum, t.pi)} more to go...`; msgCol = '#cfe9ff'; sel = srcs.findIndex(x => x.vol > 0); }
+  }
+  function fail() {
+    hearts--;
+    pour.after = () => setTimeout(() => {
+      if (K.state !== 'play') return;
+      if (hearts <= 0) {
+        K.state = 'over'; K.sfx.lose();
+        K.overlay({ kicker: `Level ${lv + 1}`, title: 'Out of hearts', sub: 'Work out each volume with its formula before you pour.',
+          buttons: [{ label: 'Try again', on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu }] });
+      } else resetStage();
+    }, 1500);
+  }
+  function resetStage() {
+    const rev = new Set(tanks.map((t, i) => t.rev ? i : -1));
+    const prev = LEVELS[lv].stages[stage].src === 'prev' ? srcs[0] : null;
+    setStage(prev);
+    tanks.forEach((t, i) => { if (rev.has(i)) t.rev = true; });
+  }
+  function clearStage(t) {
+    if (K.state !== 'play') return;
+    if (stage < LEVELS[lv].stages.length - 1) {
+      stage++;
+      const s = make([t.k, ...t.d]);
+      s.rev = true;
+      setStage(s);
+      msg = 'Now pour that one! ' + LEVELS[lv].tip; K.sfx.coin();
+      return;
+    }
+    K.state = 'over';
+    saved[lv] = Math.max(saved[lv] || 0, hearts); K.save('stars', saved);
+    K.save('best', Math.max(K.best(), saved.reduce((a, b) => a + (b || 0), 0)));
+    const btns = [];
+    if (lv < LEVELS.length - 1) btns.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+    btns.push({ label: 'Levels', ghost: true, on: menu });
+    K.overlay({ kicker: `Level ${lv + 1}`, title: lv === LEVELS.length - 1 ? 'Master pourer!' : 'Perfect pour!', score: '★'.repeat(hearts) + '☆'.repeat(3 - hearts),
+      sub: `Volume <b>${fmt(t.target, t.pi)}</b>, not a drop wasted.`, buttons: btns });
+  }
+
+  // ---------- drawing ----------
+  function outline(c, s, w, h) { // path with origin at bottom-center
+    c.beginPath();
+    const N = s.k === 'sph' ? 36 : 1;
+    const pts = [];
+    if (s.k === 'cyl' || s.k === 'box') pts.push([-w / 2, 0], [-w / 2, -h], [w / 2, -h], [w / 2, 0]);
+    else if (s.k === 'cone' || s.k === 'tri') pts.push([0, 0], [-w / 2, -h], [w / 2, -h]);
+    else if (s.k === 'pyr') pts.push([-w / 2, 0], [0, -h], [w / 2, 0]);
+    else for (let i = 0; i <= N; i++) { const a = Math.PI * i / N; pts.push([Math.cos(a + Math.PI / 2) * w / 2, -h / 2 + Math.sin(a + Math.PI / 2) * h / 2]); }
+    if (s.k === 'sph') for (let i = N; i >= 0; i--) { const a = Math.PI * i / N; pts.push([-Math.cos(a + Math.PI / 2) * w / 2, -h / 2 + Math.sin(a + Math.PI / 2) * h / 2]); }
+    pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+    c.closePath();
+  }
+  function drawBox(c, s, x, y, rot, o = {}) {
+    const { w, h, dp } = dims(s), round = s.pi;
+    c.save(); c.translate(x, y); if (rot) { c.translate(0, -h / 2); c.rotate(rot); c.translate(0, h / 2); }
+    const glow = o.glow;
+    // back faces for flat shapes
+    if (dp) {
+      c.save(); c.translate(dp, -dp); outline(c, s, w, h); c.strokeStyle = 'rgba(180,220,255,.25)'; c.lineWidth = 1.5; c.stroke(); c.restore();
+      c.strokeStyle = 'rgba(180,220,255,.25)'; c.beginPath();
+      const corners = s.k === 'pyr' ? [[-w / 2, 0], [0, -h], [w / 2, 0]] : s.k === 'tri' ? [[0, 0], [-w / 2, -h], [w / 2, -h]] : [[-w / 2, -h], [w / 2, -h], [w / 2, 0], [-w / 2, 0]];
+      corners.forEach(([a, b]) => { c.moveTo(a, b); c.lineTo(a + dp, b - dp); }); c.stroke();
+    }
+    // glass body
+    outline(c, s, w, h);
+    const gg = c.createLinearGradient(-w / 2, 0, w / 2, 0);
+    gg.addColorStop(0, 'rgba(160,210,255,.10)'); gg.addColorStop(0.3, 'rgba(255,255,255,.16)'); gg.addColorStop(1, 'rgba(160,210,255,.05)');
+    c.fillStyle = gg; c.fill();
+    // water
+    const f = s.vol / s.cap;
+    if (f > 0.001) {
+      const lh = levelAt(s, f) * h;
+      c.save(); outline(c, s, w, h); c.clip();
+      const wg = c.createLinearGradient(0, -lh, 0, 0);
+      wg.addColorStop(0, '#5fd4ff'); wg.addColorStop(1, '#1f6fd6');
+      c.fillStyle = wg; c.globalAlpha = 0.85;
+      const wave = pour && (pour.t === s) ? Math.sin(K.t * 14) * 2 : 0;
+      c.beginPath(); c.moveTo(-w, 0); c.lineTo(-w, -lh + wave); c.lineTo(w, -lh - wave); c.lineTo(w, 0); c.fill();
+      c.restore();
+      const sw = widthAt(s, Math.min(lh / h, 0.999)) * w;
+      if (round) { c.fillStyle = 'rgba(150,230,255,.55)'; c.beginPath(); c.ellipse(0, -lh, sw / 2, Math.max(1, sw * 0.09), 0, 0, 7); c.fill(); }
+      else { c.strokeStyle = 'rgba(190,240,255,.8)'; c.lineWidth = 2; c.beginPath(); c.moveTo(-sw / 2, -lh); c.lineTo(sw / 2, -lh); c.lineTo(sw / 2 + dp, -lh - dp); c.stroke(); }
+    }
+    // rim + outline
+    c.save();
+    c.strokeStyle = o.col || 'rgba(200,232,255,.85)'; c.lineWidth = 2.5;
+    if (glow) { c.shadowColor = o.col || '#4fc3ff'; c.shadowBlur = glow; }
+    outline(c, s, w, h); c.stroke();
+    if (s.k === 'cyl' || s.k === 'cone') { c.beginPath(); c.ellipse(0, -h, w / 2, w * 0.09, 0, 0, 7); c.stroke(); }
+    if (s.k === 'cyl') { c.beginPath(); c.ellipse(0, 0, w / 2, w * 0.09, 0, 0, Math.PI); c.stroke(); }
+    if (s.k === 'sph') { c.globalAlpha = 0.5; c.beginPath(); c.ellipse(0, -h / 2, w / 2, w * 0.09, 0, 0, 7); c.stroke(); }
+    c.restore();
+    // target line
+    if (s.line) {
+      const ly = -(s.line / s.H) * h;
+      c.save(); c.setLineDash([8, 6]); c.strokeStyle = '#ffd34d'; c.lineWidth = 2.5; c.shadowColor = '#ffd34d'; c.shadowBlur = 8;
+      c.beginPath(); c.moveTo(-w / 2 - 12, ly); c.lineTo(w / 2 + 12, ly); c.stroke(); c.restore();
+      K.text(`line h=${s.line}`, -w / 2 - 14, ly, 12, '#ffd34d', { align: 'right', weight: 700 });
+    }
+    c.restore();
+  }
+
+  function draw(c, t) {
+    if (!tanks.length) { // menu backdrop
+      return;
+    }
+    // shelf + floor
+    K.panel(c, 16, SRC_BASE + 4, 768, 10, { r: 5, fill: 'rgba(140,180,255,.12)' });
+    const fl = c.createLinearGradient(0, BASE, 0, 600); fl.addColorStop(0, 'rgba(79,195,255,.14)'); fl.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = fl; c.fillRect(0, BASE, 800, 108);
+
+    const hov = drag && drag.moved ? tankAt(drag.x, drag.y) : -1;
+    tanks.forEach((tk, i) => {
+      const ok = tk.rev && tk.sum === tk.target;
+      drawBox(c, tk, tk.x, tk.y, 0, { glow: i === hov ? 24 : ok ? 18 : 0, col: i === hov ? '#7cf0d0' : ok ? '#7cf0d0' : null });
+      K.text(`${i + 1}  ${NAMES[tk.k]}`, tk.x, BASE + 26, 16, '#fff', { weight: 800 });
+      K.text(label(tk), tk.x, BASE + 46, 13, '#cfe9ff', { weight: 600 });
+      if (tk.rev) K.text('V = ' + fmt(tk.target, tk.pi), tk.x, BASE + 66, 13, '#7cf0d0', { weight: 700 });
+      if (gap === tk) {
+        const { w, h } = dims(tk), ty = BASE - levelAt(tk, tk.target / tk.cap) * h, wy = BASE - levelAt(tk, tk.vol / tk.cap) * h;
+        c.save(); c.fillStyle = 'rgba(255,211,77,.18)'; c.fillRect(tk.x - w / 2, ty, w, wy - ty);
+        c.setLineDash([6, 5]); c.strokeStyle = '#ffd34d'; c.lineWidth = 2; c.beginPath(); c.moveTo(tk.x - w / 2 - 8, ty); c.lineTo(tk.x + w / 2 + 8, ty); c.stroke(); c.restore();
+        K.text('gap', tk.x + w / 2 + 22, (ty + wy) / 2, 13, '#ffd34d', { weight: 800 });
+      }
+    });
+
+    // sources
+    srcs.forEach((s, i) => {
+      if (drag && drag.si === i && drag.moved) return;
+      const { h } = dims(s);
+      const live = s.vol > 0 || s.moving;
+      c.save(); c.globalAlpha = live ? 1 : 0.35;
+      drawBox(c, s, s.x, s.y, s.rot, { glow: i === sel && !busy && live ? 18 + Math.sin(t * 5) * 6 : 0, col: i === sel && !busy && live ? '#4fc3ff' : null });
+      c.restore();
+      if (!s.moving) {
+        K.text(NAMES[s.k] + ' jug', s.hx, SRC_BASE + 26, 14, '#fff', { weight: 800 });
+        K.text(label(s), s.hx, SRC_BASE + 44, 12, '#cfe9ff', { weight: 600 });
+        if (s.rev && s.vol > 0) K.text('V = ' + fmt(s.cap, s.pi), s.hx, s.hy - h - 14, 12, '#7cf0d0', { weight: 700 });
+      }
+    });
+    if (drag && drag.moved) { const s = srcs[drag.si]; drawBox(c, s, drag.x, drag.y + dims(s).h / 2, 0, { glow: 20, col: '#4fc3ff' }); }
+
+    // stream
+    if (pour && pour.T > MOVE && pour.T < MOVE + FLOW) {
+      const p = pour, s = p.s, { w, h } = dims(s);
+      // lip = top corner on the side we tip toward, rotated about the jug's center
+      const lx = p.side * w / 2, ly = -h / 2, a = s.rot;
+      const sx = s.x + lx * Math.cos(a) - ly * Math.sin(a), sy = s.y - h / 2 + lx * Math.sin(a) + ly * Math.cos(a);
+      const th = dims(p.t).h, ty = BASE - levelAt(p.t, p.t.vol / p.t.cap) * th;
+      const wob = Math.sin(t * 30) * 1.5;
+      c.save(); c.strokeStyle = '#5fd4ff'; c.shadowColor = '#4fc3ff'; c.shadowBlur = 14; c.lineCap = 'round';
+      c.lineWidth = 6 + Math.sin(t * 20);
+      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(sx + p.side * 18, sy + 10, p.t.x + wob, ty); c.stroke();
+      c.lineWidth = 2; c.strokeStyle = 'rgba(255,255,255,.7)'; c.stroke(); c.restore();
+      if (Math.random() < 0.4) K.burst(p.t.x, ty, '#9fe6ff', 2, 90, 2, false);
+    }
+
+    // HUD
+    K.chip(16, 12, 'Level', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 96, h: 50 });
+    K.panel(c, 120, 12, 110, 50, { r: 12 });
+    for (let i = 0; i < 3; i++) heart(c, 146 + i * 30, 37, i < hearts);
+    if (LEVELS[lv].stages.length > 1) K.chip(784, 12, 'Pour', `${stage + 1} / ${LEVELS[lv].stages.length}`, '#ffd34d', { w: 90, h: 50, align: 'right' });
+    K.panel(c, 240, 12, LEVELS[lv].stages.length > 1 ? 444 : 544, 50, { r: 12 });
+    wrap(c, msg, LEVELS[lv].stages.length > 1 ? 462 : 512, 37, LEVELS[lv].stages.length > 1 ? 424 : 524, msgCol);
+    if (!busy && !drag) K.text('Drag a jug onto a tank', 400, 306, 13, 'rgba(220,228,250,.55)', { weight: 600 });
+  }
+  function wrap(c, s, x, y, maxW, col) {
+    c.font = K.font(14, 700);
+    const words = s.split(' '), lines = [''];
+    for (const w of words) { const tl = lines[lines.length - 1] ? lines[lines.length - 1] + ' ' + w : w; if (c.measureText(tl).width > maxW && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = tl; }
+    lines.forEach((l, i) => K.text(l, x, y + (i - (lines.length - 1) / 2) * 17, 14, col, { weight: 700 }));
+  }
+  function heart(c, x, y, on) {
+    c.save(); c.translate(x, y); c.scale(0.9, 0.9);
+    c.beginPath(); c.moveTo(0, 8); c.bezierCurveTo(-14, -2, -8, -14, 0, -6); c.bezierCurveTo(8, -14, 14, -2, 0, 8);
+    c.fillStyle = on ? '#ff5d73' : 'rgba(255,255,255,.12)'; if (on) { c.shadowColor = '#ff5d73'; c.shadowBlur = 10; } c.fill(); c.restore();
+  }
+
+  // test hooks
+  window.PourIt = {
+    LEVELS, make, get: () => ({ lv, stage, hearts, busy, msg, srcs: srcs.map(s => ({ cap: s.cap, vol: s.vol })), tanks: tanks.map(t => ({ target: t.target, sum: t.sum, cap: t.cap })) }),
+    pour: (si, ti) => { if (!busy) startPour(si, ti); }, load: i => { K.state = 'play'; K.hideOverlay(); load(i); },
+  };
+})();
+</script>
+</body>
+</html>

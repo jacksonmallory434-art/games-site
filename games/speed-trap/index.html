@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speed Trap</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Each level: target speeds the legal zone follows. [speed, hold seconds]; zone ramps between speeds at rate a.
+  const LEVELS = [
+    { name: 'Cruise Control', a: 2, w: 7, train: true, segs: [[5, 14]], tip: 'Steady speed makes a straight line.' },
+    { name: 'Faster, Slower', a: 2, w: 6.5, train: true, segs: [[4, 5], [8, 6], [4, 6]], tip: 'Faster = steeper line.' },
+    { name: 'Traffic', a: 2.5, w: 6, train: true, segs: [[6, 4], [2, 4], [9, 5], [5, 4]], tip: 'Match the slope of the green road.' },
+    { name: 'Red Light', a: 2.5, w: 5.5, segs: [[7, 4], [0, 3], [7, 4], [0, 2.5], [5, 3]], tip: 'Flat line = stopped. Speed 0!' },
+    { name: 'Stop and Go', a: 3, w: 5, segs: [[10, 3], [3, 3], [8, 2], [0, 2], [6, 4]], tip: 'Brake early, the slope bends slowly.' },
+    { name: 'S-Curves', a: 1.5, w: 5, segs: [[9, 0], [2, 0], [9, 0], [1, 0], [7, 2]], tip: 'Speed always changing = curved line.' },
+    { name: 'Reverse!', a: 2.5, w: 5, segs: [[6, 3], [0, 1.5], [-4, 3], [0, 1.5], [7, 4]], tip: 'Line going down = backing up. Keep braking!' },
+    { name: 'Rush Hour', a: 3, w: 4.5, segs: [[8, 2], [-3, 2], [5, 0], [0, 2], [10, 2], [2, 2]], tip: 'Watch the road ahead.' },
+    { name: 'Wiggle Road', a: 2, w: 4, segs: [[10, 0], [-4, 0], [6, 0], [0, 1], [8, 0], [-2, 1], [6, 2]], tip: 'Every bend is a speed change.' },
+    { name: 'Final Exam', a: 3.5, w: 3.8, segs: [[11, 1], [0, 1], [-5, 1], [8, 1], [1, 1], [10, 1], [-3, 1], [6, 2]], tip: 'Slope is speed. You got this!' },
+  ];
+  const DT = 0.02, GAS = 6, BRAKE = 8, VMIN = -6, VMAX = 12, START_HOLD = 2, TRAP_TIME = 2.5;
+  const GX0 = 20, GX1 = 780, GY0 = 72, GY1 = 418, GCY = 245, PX = 470, TS = 52, PS = 8;
+  const gasBtn = { x: 590, y: 470, w: 156, h: 110 }, brakeBtn = { x: 54, y: 470, w: 156, h: 110 };
+
+  let lv = 6, L, G, VT, dur, T, p, v, cam, trail, meter, inT, perfT, score, wasIn, sirenT, saved, scores, gasOn, brakeOn, goShown;
+
+  const K = window.K = MA.game({
+    slug: 'speed-trap', title: 'Speed Trap', accent: '#7ee36b', accent2: '#4fd1ff', bg: ['#0a1428', '#0d1a1c'],
+    noMenu: true, update, draw, idle,
+  });
+  saved = K.load('stars', []); scores = K.load('scores', []);
+
+  // ---------- target road ----------
+  function build(i) {
+    lv = i; L = LEVELS[i];
+    const vs = [];
+    let cur = 0;
+    const hold = s => { for (let k = 0; k < Math.round(s / DT); k++) vs.push(cur); };
+    hold(START_HOLD);
+    for (const [s, h] of L.segs) {
+      while (cur !== s) { cur = s > cur ? Math.min(s, cur + L.a * DT) : Math.max(s, cur - L.a * DT); vs.push(cur); }
+      hold(h);
+    }
+    dur = vs.length * DT;
+    hold(8); // lookahead past the finish
+    VT = Float32Array.from(vs);
+    G = new Float32Array(vs.length + 1);
+    for (let k = 0; k < vs.length; k++) G[k + 1] = G[k] + vs[k] * DT;
+  }
+  function g(t) {
+    if (t <= 0) return 0;
+    const f = t / DT, k = Math.floor(f);
+    if (k >= VT.length) return G[VT.length] + VT[VT.length - 1] * (t - VT.length * DT);
+    return G[k] + VT[k] * (f - k) * DT;
+  }
+  const vt = t => t <= 0 ? 0 : VT[Math.min(VT.length - 1, Math.floor(t / DT))];
+  window.ST = () => ({ T, p, v, g: g(T), vt: vt(T), vNext: vt(T + 0.6), w: L.w, meter, lv, dur, state: K.state });
+
+  // ---------- menus ----------
+  function unlocked() { let u = 0; while (u < LEVELS.length - 1 && saved[u]) u++; return u; }
+  function menu() {
+    K.state = 'menu';
+    const total = scores.reduce((a, b) => a + (b || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Speed Trap',
+      sub: 'Your car draws a <b>position vs. time</b> graph. Keep your line inside the green road!',
+      how: [
+        'Hold <b>Gas</b> (→ or D) to speed up, <b>Brake</b> (← or A) to slow down. Brake at 0 to reverse.',
+        'The <b>slope</b> of your line is your <b>speed</b>. Steeper = faster, flat = stopped, downhill = reverse.',
+        'Leave the road too long and the speed trap catches you!',
+      ],
+      html: total ? `<p class="ma-best">Total score: <b>${total}</b></p>` : '',
+      levels: { n: LEVELS.length, unlocked: unlocked(), stars: saved, on: begin },
+      buttons: [],
+    });
+  }
+  const ready = () => { build(6); resetCar(); menu(); };
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function resetCar() { T = 0; p = 0; v = 0; cam = 0; trail = []; meter = 0; inT = 0; perfT = 0; score = 0; wasIn = true; sirenT = 0; goShown = false; }
+  function begin(i) {
+    build(i); resetCar(); K.state = 'play';
+    K.float(400, 200, `Level ${i + 1}: ${L.name}`, '#fff', 30);
+    K.float(400, 240, L.tip, '#7ee36b', 18);
+  }
+
+  // ---------- play ----------
+  function update(dt) {
+    const k = K.keys, pd = K.ptr.down;
+    gasOn = !!(k.ArrowRight || k.ArrowUp || k.d || k.D || k.w || k.W || (pd && K.ptr.x >= 400));
+    brakeOn = !!(k.ArrowLeft || k.ArrowDown || k.a || k.A || k.s || k.S || k[' '] || (pd && K.ptr.x < 400));
+    if (gasOn) v += GAS * dt;
+    if (brakeOn) v -= BRAKE * dt;
+    v = K.clamp(v, VMIN, VMAX);
+    T += dt; p += v * dt;
+    if (!goShown && T >= START_HOLD) { goShown = true; K.float(PX, 160, 'GO!', '#ffd34d', 40); K.sfx.coin(); }
+    const d = p - g(T), inside = Math.abs(d) <= L.w;
+    trail.push([T, p, inside]);
+    while (trail.length && trail[0][0] < T - 9.5) trail.shift();
+    cam += ((p + g(T)) / 2 - cam) * (1 - Math.exp(-dt * 4));
+    if (inside) {
+      inT += dt;
+      const perfect = Math.abs(d) < L.w * 0.35;
+      if (perfect) perfT += dt;
+      score += 10 * dt * (1 + lv * 0.25) * (perfect ? 2 : 1);
+      meter = Math.max(0, meter - dt * 0.25);
+      if (!wasIn) K.sfx.good();
+    } else {
+      meter += dt / TRAP_TIME;
+      sirenT -= dt;
+      if (sirenT <= 0) { sirenT = 0.35; K.sfx.note(K.t % 0.7 < 0.35 ? 960 : 720, 0.14); }
+      if (wasIn) { K.sfx.bad(); K.shake(5); K.float(PX, sy(p) - 30, 'Off the road!', '#ff5d73', 20); }
+      if (meter >= 1) return busted();
+    }
+    wasIn = inside;
+    if (T >= dur) finish();
+  }
+
+  function finish() {
+    K.state = 'over';
+    const pct = inT / dur, stars = pct >= 0.9 ? 3 : pct >= 0.75 ? 2 : 1;
+    const total = Math.round(score + stars * 50);
+    saved[lv] = Math.max(saved[lv] || 0, stars); K.save('stars', saved);
+    scores[lv] = Math.max(scores[lv] || 0, total); K.save('scores', scores);
+    K.save('best', scores.reduce((a, b) => a + (b || 0), 0));
+    K.burst(PX, sy(p), '#7ee36b', 40, 380, 5); K.burst(PX, sy(p), '#ffd34d', 30, 300);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next level', on: () => begin(lv + 1) });
+      btns.push({ label: 'Retry', ghost: true, on: () => begin(lv) }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({
+        kicker: `Level ${lv + 1}: ${L.name}`, title: lv === LEVELS.length - 1 ? 'Calculus Champ!' : 'Clean Driving!', score: total,
+        sub: `You stayed on the road <b>${Math.round(pct * 100)}%</b> of the time.<br>${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`,
+        html: `<p class="ma-best">Level best: <b>${scores[lv]}</b></p>`, buttons: btns,
+      });
+    }, 1100);
+  }
+  function busted() {
+    K.state = 'over'; meter = 1;
+    K.shake(14); K.flash('#ff3050', 0.4); K.sfx.boom();
+    K.burst(PX, sy(p), '#ff5d73', 30, 300); K.burst(PX, sy(p), '#4f7dff', 30, 300);
+    const ahead = d => d > 0 ? 'too far ahead (too fast)' : 'too far behind (too slow)';
+    setTimeout(() => {
+      K.sfx.lose();
+      K.overlay({
+        kicker: `Level ${lv + 1}: ${L.name}`, title: 'Pulled Over!',
+        sub: `You were ${ahead(p - g(T))}.<br>Match your line's <b>slope</b> to the green road's slope.`,
+        buttons: [{ label: 'Try again', on: () => begin(lv) }, { label: 'Levels', ghost: true, on: menu }],
+      });
+    }, 900);
+  }
+
+  // demo drive behind the menu
+  function idle(dt) {
+    if (K.state !== 'menu' || !G) return;
+    T += dt; if (T > dur) resetCar();
+    p = g(T) + Math.sin(T * 1.3) * L.w * 0.4; v = vt(T);
+    cam = (p + g(T)) / 2;
+    trail.push([T, p, true]);
+    while (trail.length && trail[0][0] < T - 9.5) trail.shift();
+  }
+
+  // ---------- drawing ----------
+  const sx = t => PX + (t - T) * TS;
+  const sy = pos => GCY - (pos - cam) * PS;
+
+  function draw(c, t) {
+    if (!G) return;
+    drawGraph(c);
+    drawRoad(c);
+    drawGauge(c);
+    drawPedal(c, brakeBtn, 'BRAKE', '← / A', '#ff5d73', K.state === 'play' && brakeOn, '◀');
+    drawPedal(c, gasBtn, 'GAS', '→ / D', '#7ee36b', K.state === 'play' && gasOn, '▶');
+    // HUD
+    K.chip(20, 12, 'Level', `${lv + 1}/${LEVELS.length}`, '#fff', { w: 96, h: 50 });
+    K.chip(124, 12, 'Score', Math.round(score), '#ffd34d', { w: 110, h: 50 });
+    K.chip(242, 12, 'On road', T > 0.1 ? Math.round(100 * inT / Math.min(T, dur)) + '%' : '100%', '#7ee36b', { w: 100, h: 50 });
+    K.chip(350, 12, 'Time left', Math.max(0, Math.ceil(dur - T)) + 's', '#bfe9ff', { w: 100, h: 50 });
+    K.panel(c, 470, 12, 310, 50, { r: 12 });
+    const flash = meter > 0 && K.state === 'play' && Math.floor(t * 6) % 2;
+    K.text('SPEED TRAP', 528, 37, 11, flash ? '#4f7dff' : 'rgba(220,228,250,.75)', { weight: 800 });
+    K.rr(c, 588, 30, 178, 14, 7); c.fillStyle = 'rgba(255,255,255,.08)'; c.fill();
+    if (meter > 0) {
+      K.rr(c, 588, 30, 178 * Math.min(1, meter), 14, 7); c.fillStyle = flash ? '#4f7dff' : '#ff5d73';
+      c.save(); c.shadowColor = c.fillStyle; c.shadowBlur = 14; c.fill(); c.restore();
+    }
+    if (K.state === 'play' && T < START_HOLD) K.text('Get ready...', PX, 150, 26, '#fff', { glow: 12, weight: 800 });
+  }
+
+  function drawGraph(c) {
+    K.panel(c, GX0, GY0, GX1 - GX0, GY1 - GY0, { r: 14, fill: 'rgba(6,10,24,.55)' });
+    c.save();
+    K.rr(c, GX0, GY0, GX1 - GX0, GY1 - GY0, 14); c.clip();
+    // grid: 1 s columns, 5 m rows
+    c.fillStyle = 'rgba(255,255,255,.06)';
+    for (let s = Math.ceil(T - 10); s < T + 7; s++) c.fillRect(sx(s), GY0, 1, GY1 - GY0);
+    const top = cam + (GCY - GY0) / PS, bot = cam - (GY1 - GCY) / PS;
+    for (let m = Math.ceil(bot / 5) * 5; m <= top; m += 5) {
+      c.fillRect(GX0, sy(m), GX1 - GX0, 1);
+      K.text(m + ' m', GX1 - 8, sy(m) - 7, 9, 'rgba(220,228,250,.4)', { align: 'right', weight: 600 });
+    }
+    // finish line
+    if (sx(dur) < GX1) {
+      c.fillStyle = 'rgba(255,211,77,.5)'; c.fillRect(sx(dur) - 1, GY0, 3, GY1 - GY0);
+      K.text('FINISH', sx(dur), GY0 + 14, 11, '#ffd34d', { weight: 800 });
+    }
+    // legal zone band
+    const up = [], dn = [];
+    for (let x = GX0 - 4; x <= GX1 + 4; x += 4) {
+      const tt = T + (x - PX) / TS, gg = g(tt);
+      up.push([x, sy(gg + L.w)]); dn.push([x, sy(gg - L.w)]);
+    }
+    c.beginPath(); up.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+    for (let i = dn.length - 1; i >= 0; i--) c.lineTo(dn[i][0], dn[i][1]);
+    c.closePath();
+    const gr = c.createLinearGradient(GX0, 0, GX1, 0);
+    gr.addColorStop(0, 'rgba(126,227,107,.08)'); gr.addColorStop(0.55, 'rgba(126,227,107,.22)'); gr.addColorStop(1, 'rgba(126,227,107,.3)');
+    c.fillStyle = gr; c.fill();
+    K.glowLine(c, up, '#7ee36b', 2, 10); K.glowLine(c, dn, '#7ee36b', 2, 10);
+    // center dashes
+    c.save(); c.setLineDash([6, 10]); c.strokeStyle = 'rgba(126,227,107,.35)'; c.lineWidth = 1.5;
+    c.beginPath(); up.forEach(([x], i) => { const y = sy(g(T + (x - PX) / TS)); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke(); c.restore();
+    // now line
+    c.fillStyle = 'rgba(255,255,255,.18)'; c.fillRect(PX, GY0, 1, GY1 - GY0);
+    // trail, colored by in/out
+    for (let i = 1; i < trail.length; i++) {
+      const [t0, p0] = trail[i - 1], [t1, p1, ok] = trail[i];
+      c.strokeStyle = ok ? '#ffd34d' : '#ff5d73'; c.lineWidth = 3.5; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(sx(t0), sy(p0)); c.lineTo(sx(t1), sy(p1)); c.stroke();
+    }
+    // tangent at the car: slope = speed
+    const x = PX, y = sy(p), k = v * PS / TS, n = 46 / Math.hypot(1, k);
+    c.save(); c.setLineDash([5, 5]); c.strokeStyle = '#fff'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(x - n, y + k * n); c.lineTo(x + n, y - k * n); c.stroke(); c.restore();
+    K.orb(c, x, y, 8, '#ffd34d', { glow: 18 });
+    K.panel(c, x + 14, y + (v >= 0 ? 10 : -38), 104, 26, { r: 8, fill: 'rgba(6,10,24,.8)' });
+    K.text(`slope = ${v.toFixed(1)}`, x + 66, y + (v >= 0 ? 23 : -25), 13, '#fff', { weight: 800 });
+    c.restore();
+    // axis labels
+    K.text('time →', GX0 + 56, GY1 - 12, 11, 'rgba(220,228,250,.55)', { weight: 700 });
+    c.save(); c.translate(GX0 + 12, GY1 - 50); c.rotate(-Math.PI / 2);
+    K.text('position →', 0, 0, 11, 'rgba(220,228,250,.55)', { weight: 700 }); c.restore();
+  }
+
+  function drawRoad(c) {
+    const y = 426, RS = 10, d = p - g(T);
+    K.panel(c, GX0, y, GX1 - GX0, 34, { r: 10, fill: 'rgba(30,34,48,.8)' });
+    c.fillStyle = 'rgba(126,227,107,.28)'; c.fillRect(400 - L.w * RS, y + 2, L.w * RS * 2, 30);
+    c.fillStyle = '#7ee36b'; c.fillRect(400 - L.w * RS - 1, y + 2, 2, 30); c.fillRect(400 + L.w * RS - 1, y + 2, 2, 30);
+    // scrolling lane dashes move with your speed
+    c.fillStyle = 'rgba(255,255,255,.25)';
+    const off = ((-p * RS) % 40 + 40) % 40;
+    for (let x = GX0 + off; x < GX1; x += 40) c.fillRect(x, y + 16, 18, 2);
+    const cx = K.clamp(400 + d * RS, GX0 + 22, GX1 - 22), dir = v < -0.05 ? -1 : 1;
+    c.save(); c.translate(cx, y + 17); c.scale(dir, 1);
+    K.tile(c, -17, -8, 34, 14, meter > 0 && K.state === 'play' ? '#ff5d73' : '#ffd34d', { r: 5, depth: 2, glow: 10 });
+    c.fillStyle = 'rgba(180,230,255,.85)'; c.fillRect(4, -6, 7, 6);
+    c.fillStyle = '#111'; c.beginPath(); c.arc(-9, 8, 3.5, 0, 7); c.arc(9, 8, 3.5, 0, 7); c.fill();
+    c.restore();
+  }
+
+  function drawGauge(c) {
+    const cx = 400, cy = 586, R = 104;
+    const ang = s => Math.PI + (s - VMIN) / (VMAX - VMIN) * Math.PI;
+    K.panel(c, 216, 466, 368, 128, { r: 16, fill: 'rgba(6,10,24,.6)' });
+    c.save();
+    c.lineCap = 'butt'; c.lineWidth = 12;
+    c.strokeStyle = 'rgba(79,125,255,.35)'; c.beginPath(); c.arc(cx, cy, R, ang(VMIN), ang(0)); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,.12)'; c.beginPath(); c.arc(cx, cy, R, ang(0), ang(VMAX)); c.stroke();
+    for (let s = VMIN; s <= VMAX; s += 2) {
+      const a = ang(s), r0 = R - (s === 0 ? 18 : 11);
+      c.strokeStyle = s === 0 ? '#fff' : 'rgba(255,255,255,.5)'; c.lineWidth = s === 0 ? 3 : 1.5;
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * (R + 6), cy + Math.sin(a) * (R + 6)); c.stroke();
+      if (s % 4 === 0) K.text(String(s), cx + Math.cos(a) * (R - 28), cy + Math.sin(a) * (R - 28), 10, 'rgba(220,228,250,.7)', { weight: 700 });
+    }
+    // target speed ghost (training levels only)
+    if (L.train && K.state === 'play') {
+      const a = ang(vt(T));
+      c.strokeStyle = '#7ee36b'; c.lineWidth = 6; c.shadowColor = '#7ee36b'; c.shadowBlur = 10;
+      c.beginPath(); c.arc(cx, cy, R, a - 0.05, a + 0.05); c.stroke(); c.shadowBlur = 0;
+    }
+    const a = ang(v);
+    c.strokeStyle = '#ffd34d'; c.lineWidth = 4; c.lineCap = 'round'; c.shadowColor = '#ffd34d'; c.shadowBlur = 12;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * (R - 8), cy + Math.sin(a) * (R - 8)); c.stroke();
+    c.restore();
+    K.orb(c, cx, cy, 8, '#ffd34d', { glow: 0 });
+    K.text('SPEED = SLOPE', cx, 532, 10, 'rgba(220,228,250,.6)', { weight: 800 });
+    K.text(`${v.toFixed(1)} m/s`, cx, 554, 20, v < -0.05 ? '#8fb0ff' : '#fff', { weight: 800, glow: 8 });
+    if (v < -0.05) K.text('REVERSE', cx, 572, 9, '#8fb0ff', { weight: 800 });
+    K.text('REV', cx - R - 4, cy - 30, 9, '#8fb0ff', { weight: 800 });
+  }
+
+  function drawPedal(c, b, label, keys, col, on, arrow) {
+    const dy = on ? 3 : 0;
+    K.tile(c, b.x, b.y + dy, b.w, b.h, on ? col : '#2b3150', { r: 16, depth: on ? 2 : 6, glow: on ? 24 : 0 });
+    const tc = on ? '#0b0e1c' : col;
+    K.text(arrow, b.x + b.w / 2, b.y + dy + 32, 22, tc, { weight: 800 });
+    K.text(label, b.x + b.w / 2, b.y + dy + 62, 24, tc, { weight: 800 });
+    K.text(keys, b.x + b.w / 2, b.y + dy + 88, 11, on ? '#0b0e1c' : 'rgba(220,228,250,.6)', { weight: 600 });
+  }
+})();
+</script>
+</body>
+</html>
