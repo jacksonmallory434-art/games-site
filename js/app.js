@@ -16,6 +16,7 @@ async function init() {
   const cats = document.getElementById('cats');
   document.getElementById('count').textContent = games.length;
   let activeCat = 'All';
+  document.getElementById('random').href = `/play/${encodeURIComponent(games[Math.floor(Math.random() * games.length)].slug)}/`;
 
   // Show topics from basic to advanced; any new topic goes at the end.
   const ORDER = ['Arithmetic', 'Number Sense', 'Algebra', 'Geometry', 'Statistics', 'Precalculus', 'Calculus'];
