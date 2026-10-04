@@ -31,5 +31,6 @@ MathQuiz({ key: 'exponentexpress', title: 'Exponent Express',
     return { board: `<div class="big">${board}</div>`, q: 'Evaluate.', answer: ans, options: choices(ans, wrong.filter(v => Number.isInteger(v) && v >= 0), () => ans + rnd(-9, 9)), hint };
   } });
 </script>
+<script src="../../js/skin.js"></script>
 </body>
 </html>

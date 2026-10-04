@@ -27,5 +27,6 @@ MathQuiz({ key: 'decimaldash', title: 'Decimal Dash',
       options: choices(A, wrong.map(fmt), () => fmt(ans + rnd(-20, 20) / 10)).map(v => ({ value: v, label: v.replace('-', '−') })), hint };
   } });
 </script>
+<script src="../../js/skin.js"></script>
 </body>
 </html>

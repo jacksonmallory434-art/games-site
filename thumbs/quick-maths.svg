@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 384"><rect width="512" height="384" fill="#12131a"/>
-<rect x="56" y="40" width="400" height="140" rx="20" fill="#f7f5ee"/><text x="256" y="138" text-anchor="middle" font-size="76" fill="#2b2d3a" font-family="Arial,Helvetica,sans-serif" font-weight="700">7 × 8</text>
-<g font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="40" text-anchor="middle"><rect x="56" y="204" width="190" height="66" rx="14" fill="#1c1e29" stroke="#3ecf8e" stroke-width="5"/><text x="151" y="252" fill="#ecedf3">56</text>
-<rect x="266" y="204" width="190" height="66" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="3"/><text x="361" y="252" fill="#ecedf3">54</text>
-<rect x="56" y="286" width="190" height="66" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="3"/><text x="151" y="334" fill="#ecedf3">48</text>
-<rect x="266" y="286" width="190" height="66" rx="14" fill="#1c1e29" stroke="#2c2f3e" stroke-width="3"/><text x="361" y="334" fill="#ecedf3">63</text></g>
-</svg>

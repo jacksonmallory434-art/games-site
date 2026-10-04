@@ -147,6 +147,7 @@ function start() {
 }
 function tick(t) {
   if (!running) return;
+  if (window.MA_WAIT) { last = t; requestAnimationFrame(tick); return; } // clock waits for the first answer
   timeLeft -= (t - last) / 1000; last = t;
   if (timeLeft <= 0) return end();
   $('time').textContent = Math.ceil(timeLeft);
@@ -163,5 +164,6 @@ function end() {
 $('play').onclick = start; $('again').onclick = start;
 $('bestStart').textContent = getBest() ? 'Best: ' + getBest() + ' pizzas' : '';
 </script>
+<script src="../../js/skin.js"></script>
 </body>
 </html>

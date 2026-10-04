@@ -69,14 +69,7 @@
     const style = document.createElement('style'); style.textContent = CSS + (cfg.css || ''); document.head.appendChild(style);
     document.body.innerHTML = `
       <div class="mq">
-        <section class="mq-screen" id="mq-start">
-          <h1>${cfg.title}</h1>
-          ${(cfg.intro || []).map(p => `<p>${p}</p>`).join('')}
-          <p>${TOTAL} seconds.${PENALTY ? ` Wrong answers cost ${PENALTY} seconds and show a hint.` : ''} Click or press 1–${cfg.choices || 4}.</p>
-          <p id="mq-beststart"></p>
-          <button class="mq-go" id="mq-play">Start</button>
-        </section>
-        <section id="mq-game" hidden>
+        <section id="mq-game">
           <div class="mq-hud"><span>Score <b id="mq-score">0</b></span><span>Streak <b id="mq-streak">0</b></span><span><b id="mq-time">${TOTAL}</b>s</span></div>
           <div class="mq-bar"><i id="mq-bar"></i></div>
           <div class="mq-board" id="mq-board"></div>
@@ -127,11 +120,12 @@
     function start() {
       score = 0; streak = 0; right = 0; timeLeft = TOTAL; running = true; last = performance.now();
       $('mq-score').textContent = 0; $('mq-streak').textContent = 0;
-      $('mq-start').hidden = true; $('mq-end').hidden = true; $('mq-game').hidden = false;
+      $('mq-end').hidden = true; $('mq-game').hidden = false;
       next(); requestAnimationFrame(tick);
     }
     function tick(t) {
       if (!running) return;
+      if (window.MA_WAIT) { last = t; requestAnimationFrame(tick); return; } // clock waits for the first answer
       timeLeft -= (t - last) / 1000; last = t;
       if (timeLeft <= 0) return end();
       $('mq-time').textContent = Math.ceil(timeLeft); $('mq-bar').style.width = (timeLeft / TOTAL * 100) + '%';
@@ -144,8 +138,11 @@
       $('mq-bestend').textContent = `${right} correct. ` + (score >= best && score > 0 ? 'New best!' : 'Best: ' + best);
       $('mq-game').hidden = true; $('mq-end').hidden = false;
     }
-    $('mq-play').onclick = start; $('mq-again').onclick = start;
-    $('mq-beststart').textContent = getBest() ? 'Best: ' + getBest() : '';
+    $('mq-again').onclick = start;
+    // No start screen: the first question is ready right away, and the clock waits for the first answer.
+    window.MA_WAIT = true;
+    window.MA_TIP = { text: (cfg.intro || [])[0] || cfg.title, timed: true };
+    start();
     // For automated testing.
     window.__mq = { get cur() { return cur; }, set right(v) { right = v; }, choose, start, next };
   };
