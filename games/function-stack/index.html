@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Function Stack</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Function Stack — a MathAdvice original. AP Precalculus topics 2.7–2.8.
+MathQuiz({ key: 'functionstack', title: 'Function Stack',
+  intro: ['Plug functions into functions, and run them backwards.', 'Work from the inside out: in f(g(2)), find g(2) first.'],
+  css: `table.tb { border-collapse: collapse; margin: 4px auto; font-size: 1.15rem; font-weight: 800; }
+        table.tb td { border: 2px solid #b9c6dd; padding: 4px 12px; min-width: 40px; background: #fff; } table.tb tr td:first-child { background: #e8eef8; }
+        .mq-board .mid { font-size: clamp(1.05rem, 4.8vw, 1.4rem); }`,
+  gen(level) {
+    const { rnd, pick, choices, shuffle, neg, frac } = MQ;
+    const nz = (a, b) => { let v; do v = rnd(a, b); while (!v); return v; };
+    const inv = '<sup>−1</sup>';
+
+    if (level < 2 || Math.random() < .3) {
+      // Table rounds: f and g are both one-to-one on {0, …, 4}.
+      const xs = [0, 1, 2, 3, 4], f = shuffle([...xs]), g = shuffle([...xs]);
+      const board = `<table class="tb"><tr><td>x</td>${xs.map(x => `<td>${x}</td>`).join('')}</tr>` +
+        `<tr><td>f(x)</td>${f.map(y => `<td>${y}</td>`).join('')}</tr><tr><td>g(x)</td>${g.map(y => `<td>${y}</td>`).join('')}</tr></table>`;
+      const finv = v => f.indexOf(v), ginv = v => g.indexOf(v);
+      const types = ['fg', 'gf'];
+      if (level >= 1) types.push('finv', 'ff', 'ginv');
+      if (level >= 2) types.push('finvg');
+      const type = pick(types), a = rnd(0, 4);
+      const filler = () => rnd(0, 4);
+      if (type === 'fg') return { board, q: `Find <em>f(g(${a}))</em>.`, answer: f[g[a]], options: choices(f[g[a]], [g[f[a]], g[a], f[a]], filler), hint: `First g(${a}) = ${g[a]}. Then f(${g[a]}) = ${f[g[a]]}.` };
+      if (type === 'gf') return { board, q: `Find <em>g(f(${a}))</em>.`, answer: g[f[a]], options: choices(g[f[a]], [f[g[a]], f[a], g[a]], filler), hint: `First f(${a}) = ${f[a]}. Then g(${f[a]}) = ${g[f[a]]}.` };
+      if (type === 'ff') return { board, q: `Find <em>f(f(${a}))</em>.`, answer: f[f[a]], options: choices(f[f[a]], [f[a], g[g[a]], f[g[a]]], filler), hint: `f(${a}) = ${f[a]}, and then f(${f[a]}) = ${f[f[a]]}.` };
+      if (type === 'finv') return { board, q: `Find <em>f${inv}(${a})</em>.`, answer: finv(a), options: choices(finv(a), [f[a], ginv(a), g[a]], filler), hint: `f${inv}(${a}) asks: which x gives f(x) = ${a}? Look for ${a} in the f(x) row.` };
+      if (type === 'ginv') return { board, q: `Find <em>g${inv}(${a})</em>.`, answer: ginv(a), options: choices(ginv(a), [g[a], finv(a), f[a]], filler), hint: `g${inv}(${a}) asks: which x gives g(x) = ${a}? Look for ${a} in the g(x) row.` };
+      return { board, q: `Find <em>f${inv}(g(${a}))</em>.`, answer: finv(g[a]), options: choices(finv(g[a]), [f[g[a]], g[a], ginv(f[a])], filler), hint: `g(${a}) = ${g[a]}. Then find the x where f(x) = ${g[a]}.` };
+    }
+
+    // Formula rounds
+    const m = pick([2, 3, 4, 5, -2, -3]);
+    let c; do c = nz(-8, 8); while (Math.abs(c) === 1 || c === m);
+    const lin = (m, c) => `${m === 1 ? '' : m === -1 ? '−' : neg(m)}x ${c < 0 ? '−' : '+'} ${Math.abs(c)}`;
+    const type = pick(['comp', 'comp', 'numInv', 'symInv']);
+    if (type === 'comp') {
+      const e = nz(-5, 5), sq = Math.random() < .5;
+      const k = pick([2, 3, -1]);
+      const gx = sq ? `x<sup>2</sup> ${e < 0 ? '−' : '+'} ${Math.abs(e)}` : lin(k, e);
+      const G = sq ? x => x * x + e : x => k * x + e;
+      const F = x => m * x + c;
+      const a = rnd(-3, 3), outer = Math.random() < .5;
+      const ans = outer ? F(G(a)) : G(F(a)), other = outer ? G(F(a)) : F(G(a));
+      const name = outer ? `f(g(${neg(a)}))` : `g(f(${neg(a)}))`;
+      return { board: `<div class="mid">f(x) = ${lin(m, c)}</div><div class="mid">g(x) = ${gx}</div>`, q: `Find <em>${name}</em>.`, answer: ans,
+        options: choices(ans, [other, F(a) * G(a), outer ? F(a) : G(a), ans + m], () => ans + nz(-9, 9)),
+        hint: outer ? `g(${neg(a)}) = ${neg(G(a))}, then f(${neg(G(a))}) = ${neg(ans)}.` : `f(${neg(a)}) = ${neg(F(a))}, then g(${neg(F(a))}) = ${neg(ans)}.` };
+    }
+    if (type === 'numInv') {
+      const t = rnd(-5, 6), v = m * t + c;
+      return { board: `<div class="mid">f(x) = ${lin(m, c)}</div>`, q: `Find <em>f${inv}(${neg(v)})</em>.`, answer: t,
+        options: choices(t, [m * v + c, v - c, t + 1, -t], () => t + nz(-6, 6)), hint: `Solve ${lin(m, c)} = ${neg(v)} for x.` };
+    }
+    // Inverse as a formula
+    const top = s => `x ${s < 0 ? '+' : '−'} ${Math.abs(s)}`;
+    const F2 = (num, den) => den < 0 ? '−' + frac(num, Math.abs(den)) : frac(num, den);
+    const opts = [
+      { value: 'ok', label: F2(top(c), m) },
+      { value: 'w1', label: F2(top(-c), m) },
+      { value: 'w2', label: frac('x', Math.abs(m)).replace(/^/, m < 0 ? '−' : '') + ` ${c < 0 ? '+' : '−'} ${Math.abs(c)}` },
+      { value: 'w3', label: F2(top(m), c) },
+    ];
+    return { board: `<div class="mid">f(x) = ${lin(m, c)}</div>`, q: `Which is <em>f${inv}(x)</em>?`, answer: 'ok', options: shuffle(opts).map(o => ({ value: o.value, label: 'f' + inv + '(x) = ' + o.label })),
+      hint: `Undo the steps in reverse: subtract ${neg(c)}, then divide by ${neg(m)}.` };
+  } });
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Asymptote Alley</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Asymptote Alley — a MathAdvice original. AP Precalculus topics 1.7–1.10.
+MathQuiz({ key: 'asymptotealley', title: 'Asymptote Alley',
+  intro: ['Each round shows a rational function in factored form.', 'Find its asymptotes, holes, and x-intercepts.'],
+  css: '.mq-board .mid .frac span { padding-left: 6px; padding-right: 6px; }',
+  gen(level) {
+    const { rnd, pick, choices, shuffle, neg, frac, gcd } = MQ;
+    const factor = r => r === 0 ? 'x' : `(x ${r < 0 ? '+' : '−'} ${Math.abs(r)})`;
+    const pickRoots = (n, avoid) => shuffle([-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].filter(r => !avoid.includes(r))).slice(0, n);
+
+    // Degrees of the top and bottom (not counting the hole factor).
+    const shape = level === 0 ? pick(['eq', 'lt']) : pick(['eq', 'lt', 'gt']);
+    const [nN, nD] = shape === 'eq' ? pick([[1, 1], [2, 2]]) : shape === 'lt' ? pick([[0, 1], [1, 2]]) : [2, 1];
+    const hasHole = level >= 1 && Math.random() < .6;
+    const h = hasHole ? pickRoots(1, [])[0] : null;
+    const zeros = pickRoots(nN, h === null ? [] : [h]);
+    const poles = pickRoots(nD, [...zeros, h]);
+    const kN = level >= 2 ? pick([1, 2, 3, -1, -2, 4]) : 1, kD = level >= 3 ? pick([1, 2, 3]) : 1;
+
+    const side = (k, roots) => {
+      const fs = shuffle([...roots, ...(h === null ? [] : [h])]).map(factor).join('');
+      if (!fs) return neg(k);
+      return (k === 1 ? '' : k === -1 ? '−' : neg(k)) + fs;
+    };
+    const board = `<div class="mid">f(x) = ${frac(side(kN, zeros), side(kD, poles))}</div>`;
+    const xk = v => ({ value: 'x' + v, label: `x = ${neg(v)}` });
+
+    const types = ['va', 'ha'];
+    if (zeros.length) types.push('zero');
+    if (hasHole) types.push('hole', 'hole');
+    const type = pick(types);
+
+    if (type === 'va') {
+      const p = pick(poles);
+      const wrong = [h, ...zeros, -p, p + 1].filter(x => x !== null && !poles.includes(x));
+      return { board, q: `Which is a <em>vertical asymptote</em>?`, answer: 'x' + p,
+        options: choices('x' + p, wrong.map(v => 'x' + v), () => { let v; do v = rnd(-7, 7); while (poles.includes(v)); return 'x' + v; }).map(k => xk(+k.slice(1))),
+        hint: 'Vertical asymptotes are where the denominator is 0 after canceling any factor shared with the numerator.' + (hasHole ? ` The shared factor ${factor(h)} makes a hole, not an asymptote.` : '') };
+    }
+    if (type === 'hole') {
+      const wrong = [...poles, ...zeros, -h, h + 1].filter(x => x !== h);
+      return { board, q: 'Where is the <em>hole</em> in the graph?', answer: 'x' + h,
+        options: choices('x' + h, wrong.map(v => 'x' + v), () => 'x' + rnd(-7, 7)).map(k => xk(+k.slice(1))),
+        hint: `A hole comes from a factor in both the top and the bottom. Here that's ${factor(h)}, so the hole is at x = ${neg(h)}.` };
+    }
+    if (type === 'zero') {
+      const z = pick(zeros);
+      const wrong = [h, ...poles, -z, z + 1].filter(x => x !== null && !zeros.includes(x));
+      return { board, q: 'Which is an <em>x-intercept</em>?', answer: 'x' + z,
+        options: choices('x' + z, wrong.map(v => 'x' + v), () => { let v; do v = rnd(-7, 7); while (zeros.includes(v)); return 'x' + v; }).map(k => xk(+k.slice(1))),
+        hint: 'x-intercepts are zeros of the numerator that don\'t cancel with the denominator.' + (hasHole ? ` x = ${neg(h)} cancels, so it's a hole.` : '') };
+    }
+    // Horizontal asymptote
+    let ans;
+    if (nN < nD) ans = 'y0';
+    else if (nN > nD) ans = 'none';
+    else { const g = gcd(kN, kD); ans = `y${kN / g}/${kD / g}`; }
+    const yk = k => {
+      if (k === 'none') return { value: k, label: 'None' };
+      const [n, d] = k.slice(1).split('/').map(Number);
+      return { value: k, label: 'y = ' + (!d || d === 1 ? neg(n) : (n < 0 ? '−' : '') + frac(Math.abs(n), d)) };
+    };
+    const norm = (n, d) => { if (d < 0) { n = -n; d = -d; } const g = gcd(n, d) || 1; return `y${n / g}/${d / g}`; };
+    const pool = ['y0', 'none', norm(kN, kD), norm(kD, kN), 'y1', norm(-kN, kD), 'y2'];
+    const fix = k => k.endsWith('/1') ? k.slice(0, -2) : k;
+    const A = fix(ans);
+    return { board, q: 'What is the <em>horizontal asymptote</em>?', answer: A,
+      options: choices(A, pool.map(fix), () => 'y' + rnd(-4, 4)).map(yk),
+      hint: 'Compare degrees. Bottom bigger: y = 0. Same degree: y = (leading coefficient on top) ÷ (leading coefficient on bottom). Top bigger: no horizontal asymptote.' };
+  } });
+</script>
+</body>
+</html>

@@ -89,6 +89,7 @@ cards = "\n".join(
     for g in games)
 index = re.sub(r'<div id="grid" class="grid">.*?</div><!-- /grid -->|<div id="grid" class="grid"></div>',
                f'<div id="grid" class="grid">\n{cards}\n    </div><!-- /grid -->', index, flags=re.S)
+index = re.sub(r'<span id="count">\d+</span>', f'<span id="count">{len(games)}</span>', index)
 open(index_path, "w", encoding="utf-8").write(index)
 
 # 3) Sitemap

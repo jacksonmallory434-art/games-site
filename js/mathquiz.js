@@ -41,11 +41,20 @@
     gcd: (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a; },
     neg: v => String(v).replace(/-/g, '−'),
     frac: (n, d) => `<span class="frac"><span>${n}</span><span>${d}</span></span>`,
+    // An angle of n/d · π, simplified, as HTML (for example 5π/6).
+    pi(n, d) {
+      if (n === 0) return '0';
+      const g = H.gcd(n, d); n /= g; d /= g;
+      const s = n < 0 ? '−' : '', top = (Math.abs(n) === 1 ? '' : Math.abs(n)) + 'π';
+      return d === 1 ? s + top : s + H.frac(top, d);
+    },
     // Build 4 unique choices: the right one, the given distractors, then nearby numbers as filler.
     choices(correct, distractors = [], filler) {
       const key = v => String(v);
       const out = [correct], seen = new Set([key(correct)]);
       for (const d of distractors) { if (out.length >= 4) break; if (d === undefined || d === null || seen.has(key(d))) continue; seen.add(key(d)); out.push(d); }
+      // Numbers with no filler: use nearby numbers (kept positive when the answer is positive).
+      if (!filler && typeof correct === 'number' && Number.isInteger(correct)) filler = () => { let v; do v = correct + H.rnd(-5, 5); while (v === correct || (correct > 0 && v <= 0)); return v; };
       let guard = 0;
       while (out.length < 4 && filler && guard++ < 200) { const d = filler(); if (!seen.has(key(d))) { seen.add(key(d)); out.push(d); } }
       return H.shuffle(out);
@@ -91,7 +100,7 @@
       $('mq-board').innerHTML = cur.board || '';
       $('mq-board').hidden = !cur.board;
       $('mq-q').innerHTML = cur.q || '';
-      cur.labels = cur.options.map(o => typeof o === 'object' ? o.label : String(o));
+      cur.labels = cur.options.map(o => typeof o === 'object' ? o.label : H.neg(o));
       cur.keys = cur.options.map(o => typeof o === 'object' ? String(o.value) : String(o));
       $('mq-answers').style.gridTemplateColumns = cur.options.length === 2 ? '1fr 1fr' : '';
       $('mq-answers').innerHTML = cur.labels.map((l, i) => `<button data-i="${i}"><small>${i + 1}</small>${l}</button>`).join('');

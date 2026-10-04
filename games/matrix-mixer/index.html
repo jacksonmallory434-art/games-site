@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Matrix Mixer</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Matrix Mixer — a MathAdvice original. AP Precalculus topics 4.10–4.13.
+MathQuiz({ key: 'matrixmixer', title: 'Matrix Mixer',
+  intro: ['2×2 matrices: determinants, multiplying, and what a matrix does to the plane.'],
+  css: `.mx { display: inline-grid; gap: 2px 14px; padding: 3px 9px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; border-radius: 7px; font-weight: 800; vertical-align: middle; text-align: center; }
+        .mq-board .row { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: clamp(1.2rem, 5.5vw, 1.6rem); font-weight: 800; }
+        .mq-answers .mx { font-size: 1.05rem; gap: 0 10px; } .t { font-size: 1rem; }`,
+  gen(level) {
+    const { rnd, pick, choices, shuffle, neg } = MQ;
+    const nz = (a, b) => { let v; do v = rnd(a, b); while (!v); return v; };
+    const mx = rows => `<span class="mx" style="grid-template-columns:repeat(${rows[0].length},auto)">${rows.flat().map(v => `<span>${neg(v)}</span>`).join('')}</span>`;
+    const rand = (lo = -5, hi = 6) => [[rnd(lo, hi), rnd(lo, hi)], [rnd(lo, hi), rnd(lo, hi)]];
+    const types = ['det', 'det'];
+    if (level >= 1) types.push('mv', 'mv');
+    if (level >= 2) types.push('mm', 'transform');
+    if (level >= 3) types.push('singular', 'transform');
+    const type = pick(types);
+
+    if (type === 'det') {
+      const [[a, b], [c, d]] = level ? rand(-6, 8) : rand(0, 7), ans = a * d - b * c;
+      return { board: `<div class="row">det ${mx([[a, b], [c, d]])}</div>`, q: 'Find the <em>determinant</em>.', answer: ans,
+        options: choices(ans, [a * d + b * c, b * c - a * d, a * b - c * d, a * c - b * d], () => ans + nz(-6, 6)),
+        hint: `For [a b; c d], det = ad − bc = ${neg(a)}·${neg(d)} − ${neg(b)}·${neg(c)}.` };
+    }
+    if (type === 'mv') {
+      const A = rand(-4, 5), v = [rnd(-4, 5), rnd(-4, 5)];
+      const mul = (M, u) => [M[0][0] * u[0] + M[0][1] * u[1], M[1][0] * u[0] + M[1][1] * u[1]];
+      const T = [[A[0][0], A[1][0]], [A[0][1], A[1][1]]];
+      const ans = mul(A, v), key = u => u.join(',');
+      const wrong = [mul(T, v), [ans[1], ans[0]], [A[0][0] * v[0], A[1][1] * v[1]], [ans[0], -ans[1]]].map(key);
+      return { board: `<div class="row">${mx(A)} ${mx(v.map(x => [x]))} = ?</div>`, q: 'Multiply the matrix by the vector.', answer: key(ans),
+        options: choices(key(ans), wrong, () => key([ans[0] + nz(-4, 4), ans[1] + rnd(-3, 3)])).map(k => ({ value: k, label: mx(k.split(',').map(x => [+x])) })),
+        hint: 'Each row of the matrix dots with the vector: top = (row 1)·v, bottom = (row 2)·v.' };
+    }
+    if (type === 'mm') {
+      const A = rand(-3, 4), B = rand(-3, 4), i = rnd(0, 1), j = rnd(0, 1);
+      const prod = (X, Y) => [0, 1].map(r => [0, 1].map(c => X[r][0] * Y[0][c] + X[r][1] * Y[1][c]));
+      const AB = prod(A, B), BA = prod(B, A), ans = AB[i][j];
+      const pos = `${['top', 'bottom'][i]}-${['left', 'right'][j]}`;
+      return { board: `<div class="row">A = ${mx(A)}&nbsp; B = ${mx(B)}</div>`, q: `What is the <em>${pos}</em> entry of AB?`, answer: ans,
+        options: choices(ans, [BA[i][j], AB[j][i], A[i][j] * B[i][j], AB[1 - i][1 - j]], () => ans + nz(-5, 5)),
+        hint: `Entry (row ${i + 1}, column ${j + 1}) of AB = row ${i + 1} of A · column ${j + 1} of B.` };
+    }
+    if (type === 'singular') {
+      // One matrix has rows that are multiples of each other, so its determinant is 0.
+      const a = nz(-4, 5), b = nz(-4, 5), k = pick([2, 3, -1, -2]);
+      const sing = [[a, b], [k * a, k * b]];
+      const others = [];
+      while (others.length < 3) { const M = rand(-5, 6); const det = M[0][0] * M[1][1] - M[0][1] * M[1][0]; if (det !== 0) others.push(M); }
+      const opts = shuffle([{ value: 'ok', label: mx(sing) }, ...others.map((M, n) => ({ value: 'w' + n, label: mx(M) }))]);
+      return { board: '', q: 'Which matrix has <em>no inverse</em>?', answer: 'ok', options: opts,
+        hint: 'A matrix has no inverse when its determinant ad − bc is 0. That happens when one row is a multiple of the other.' };
+    }
+    // Which matrix does this transformation?
+    const TR = {
+      rot90: ['Rotate 90° counterclockwise', [[0, -1], [1, 0]]], rot270: ['Rotate 90° clockwise', [[0, 1], [-1, 0]]],
+      rot180: ['Rotate 180°', [[-1, 0], [0, -1]]], refX: ['Reflect over the x-axis', [[1, 0], [0, -1]]],
+      refY: ['Reflect over the y-axis', [[-1, 0], [0, 1]]], refYX: ['Reflect over y = x', [[0, 1], [1, 0]]],
+      dil2: ['Dilate by a factor of 2', [[2, 0], [0, 2]]], stretchX: ['Stretch horizontally by 3', [[3, 0], [0, 1]]],
+    };
+    const keys = Object.keys(TR), want = pick(keys);
+    const opts = [want, ...shuffle(keys.filter(k => k !== want)).slice(0, 3)];
+    return { board: `<div class="mid">${TR[want][0]}</div>`, q: 'Which matrix does this?', answer: want,
+      options: shuffle(opts).map(k => ({ value: k, label: mx(TR[k][1]) })),
+      hint: 'Check where the matrix sends (1, 0) and (0, 1): they become the first and second columns.' };
+  } });
+</script>
+</body>
+</html>

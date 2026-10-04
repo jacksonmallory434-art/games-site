@@ -18,7 +18,7 @@ async function init() {
   let activeCat = 'All';
 
   // Show topics from basic to advanced; any new topic goes at the end.
-  const ORDER = ['Arithmetic', 'Number Sense', 'Algebra', 'Geometry', 'Statistics', 'Calculus'];
+  const ORDER = ['Arithmetic', 'Number Sense', 'Algebra', 'Geometry', 'Statistics', 'Precalculus', 'Calculus'];
   const found = [...new Set(games.map(g => g.category))];
   const categories = ['All', ...ORDER.filter(c => found.includes(c)), ...found.filter(c => !ORDER.includes(c))];
   const count = c => c === 'All' ? games.length : games.filter(g => g.category === c).length;

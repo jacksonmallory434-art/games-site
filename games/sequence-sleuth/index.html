@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Sequence Sleuth</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Sequence Sleuth — a MathAdvice original. AP Precalculus topics 2.1–2.3.
+MathQuiz({ key: 'sequencesleuth', title: 'Sequence Sleuth',
+  intro: ['Crack arithmetic and geometric sequences.', 'Later rounds bring formulas and tables of linear and exponential functions.'],
+  css: `.t { font-size: 1.05rem; } table.tb { border-collapse: collapse; margin: 4px auto; font-size: 1.15rem; font-weight: 800; }
+        table.tb td { border: 2px solid #b9c6dd; padding: 4px 12px; min-width: 42px; background: #fff; } table.tb tr td:first-child { background: #e8eef8; }`,
+  gen(level) {
+    const { rnd, pick, choices, neg, frac } = MQ;
+    const nz = (a, b) => { let v; do v = rnd(a, b); while (!v); return v; };
+    const list = ts => `<div class="mid">${ts.map(neg).join(', ')}, …</div>`;
+    const sub = n => `a<sub>${n}</sub>`;
+    const types = ['arNext', 'geoNext', 'diff'];
+    if (level >= 1) types.push('arNth', 'geoNth');
+    if (level >= 2) types.push('expFormula', 'arFormula');
+    if (level >= 3) types.push('kind', 'kind');
+    const type = pick(types);
+
+    // A geometric sequence that stays in whole numbers.
+    const geo = () => {
+      if (level >= 1 && Math.random() < .3) { const a1 = pick([64, 96, 160, 192, 48, 80]); return { a1, r: '1/2', terms: [a1, a1 / 2, a1 / 4, a1 / 8], next: a1 / 16 }; }
+      const a1 = pick([1, 2, 3, 4, 5, -2, -3]), r = level >= 1 ? pick([2, 3, -2, 4, 5, -3]) : pick([2, 3, 4]);
+      const terms = [0, 1, 2, 3].map(i => a1 * r ** i);
+      return { a1, r: String(r), terms, next: a1 * r ** 4 };
+    };
+
+    if (type === 'arNext' || (type === 'diff' && Math.random() < .5)) {
+      const a1 = rnd(-10, 20), d = nz(-7, 9), t = [0, 1, 2, 3].map(i => a1 + i * d);
+      if (type === 'diff') return { board: list(t), q: 'What is the <em>common difference</em>?', answer: d,
+        options: choices(d, [-d, d + 1, d - 1, d * 2]), hint: 'Subtract any term from the one after it.' };
+      const ans = t[3] + d;
+      return { board: list(t), q: 'What is the <em>next term</em>?', answer: ans,
+        options: choices(ans, [t[3] - d, t[3] + 2 * d, ans + 1, ans - 1]), hint: `Each term changes by ${neg(d)}. Add that to the last term.` };
+    }
+    if (type === 'geoNext' || type === 'diff') {
+      const g = geo();
+      if (type === 'diff') {
+        const lab = v => v === '1/2' ? frac(1, 2) : neg(v);
+        const pool = g.r === '1/2' ? ['1/2', '2', '-1/2', String(g.terms[1] - g.terms[0])] : [g.r, String(-g.r), String(g.terms[1] - g.terms[0]), String(+g.r + 1), '1/2'];
+        return { board: list(g.terms), q: 'What is the <em>common ratio</em>?', answer: g.r,
+          options: choices(g.r, pool, () => String(rnd(2, 9))).map(v => ({ value: v, label: lab(v) })), hint: 'Divide any term by the one before it.' };
+      }
+      const t = g.terms, diff = t[3] - t[2];
+      return { board: list(t), q: 'What is the <em>next term</em>?', answer: g.next,
+        options: choices(g.next, [t[3] + diff, -g.next, g.next * (g.r === '1/2' ? .5 : +g.r), t[3] * 2 === g.next ? t[3] * 3 : t[3] * 2]),
+        hint: 'Each term is multiplied by the same number. Find it by dividing a term by the one before it.' };
+    }
+    if (type === 'arNth') {
+      const a1 = rnd(-10, 15), d = nz(-6, 8), n = rnd(10, 40), ans = a1 + (n - 1) * d;
+      return { board: `<div class="mid">${sub(1)} = ${neg(a1)}, d = ${neg(d)}</div>`, q: `Find <em>${sub(n)}</em>.`, answer: ans,
+        options: choices(ans, [a1 + n * d, n * d, a1 + (n - 2) * d, ans + 1]), hint: `${sub('n')} = ${sub(1)} + d(n − 1), so ${sub(n)} = ${neg(a1)} + ${neg(d)}·${n - 1}.` };
+    }
+    if (type === 'geoNth') {
+      const a1 = pick([1, 2, 3, 5, -2]), r = pick([2, 3, -2]), n = rnd(5, r === 2 || r === -2 ? 10 : 7), ans = a1 * r ** (n - 1);
+      return { board: `<div class="mid">${sub(1)} = ${neg(a1)}, r = ${neg(r)}</div>`, q: `Find <em>${sub(n)}</em>.`, answer: ans,
+        options: choices(ans, [a1 * r ** n, a1 * r ** (n - 2), -ans, (a1 * r) ** (n - 1)].filter(v => Math.abs(v) < 1e7)),
+        hint: `${sub('n')} = ${sub(1)} · r<sup>n − 1</sup>, so ${sub(n)} = ${neg(a1)} · ${neg(r)}<sup>${n - 1}</sup>.` };
+    }
+    const table = (xs, ys) => `<table class="tb"><tr><td>x</td>${xs.map(x => `<td>${neg(x)}</td>`).join('')}</tr><tr><td>f(x)</td>${ys.map(y => `<td>${neg(y)}</td>`).join('')}</tr></table>`;
+    if (type === 'expFormula') {
+      let a, b; do { a = pick([2, 3, 4, 5, 6]); b = pick([2, 3, 4, 5]); } while (a === b);
+      const ys = [0, 1, 2, 3].map(x => a * b ** x);
+      const F = (k, m) => k === 'L' ? `f(x) = ${ys[1] - ys[0]}x + ${a}` : `f(x) = ${k} · ${m}<sup>x</sup>`;
+      const opts = [[a, b], [b, a], [a * b, b], ['L']].map(([k, m]) => ({ value: k + '|' + (m || ''), label: `<span class="t">${F(k, m)}</span>` }));
+      return { board: table([0, 1, 2, 3], ys), q: 'Which function fits the table?', answer: a + '|' + b, options: MQ.shuffle(opts),
+        hint: `f(0) is the starting value a = ${a}, and each step multiplies by b = ${b}. So f(x) = a · b<sup>x</sup>.` };
+    }
+    if (type === 'arFormula') {
+      const a1 = rnd(-8, 12), d = nz(-6, 7), t = [0, 1, 2, 3].map(i => a1 + i * d);
+      const cand = [[a1, d, 'n − 1'], [d, a1, 'n − 1'], [a1, d, 'n'], [a1 - d, d, 'n − 1']];
+      const show = ([s, m, f]) => `${sub('n')} = ${neg(s)} ${m < 0 ? '−' : '+'} ${Math.abs(m) === 1 ? '' : Math.abs(m)}${f === 'n' ? 'n' : '(n − 1)'}`;
+      const val = ([s, m, f]) => [1, 2, 3].map(n => s + m * (f === 'n' ? n : n - 1)).join();
+      const right = val(cand[0]);
+      const opts = cand.filter((c, i) => i === 0 || val(c) !== right).map((c, i) => ({ value: i === 0 ? 'ok' : 'w' + i, label: `<span class="t">${show(c)}</span>` }));
+      return { board: list(t), q: 'Which formula gives this sequence?', answer: 'ok', options: MQ.shuffle(opts),
+        hint: `Start at ${sub(1)} = ${neg(a1)} and add d = ${neg(d)} a total of (n − 1) times.` };
+    }
+    // Linear, exponential, or neither from a table
+    const kind = pick(['lin', 'exp', 'neither']);
+    const xs = [0, 1, 2, 3, 4];
+    let ys;
+    if (kind === 'lin') { const m = nz(-6, 7), c = rnd(-5, 10); ys = xs.map(x => m * x + c); }
+    else if (kind === 'exp') { const c = pick([1, 2, 3, 5]), r = pick([2, 3]); ys = xs.map(x => c * r ** x); }
+    else { const c = rnd(-3, 4), m = nz(-3, 3); ys = xs.map(x => x * x + m * x + c); }
+    return { board: table(xs, ys), q: 'Is f <em>linear</em>, <em>exponential</em>, or <em>neither</em>?', answer: kind,
+      options: [{ value: 'lin', label: 'Linear' }, { value: 'exp', label: 'Exponential' }, { value: 'neither', label: 'Neither' }],
+      hint: 'Linear: same difference each step. Exponential: same ratio each step. Neither: no constant difference or ratio.' };
+  } });
+</script>
+</body>
+</html>

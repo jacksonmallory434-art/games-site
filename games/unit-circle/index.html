@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Unit Circle Sprint</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Unit Circle Sprint — a MathAdvice original. AP Precalculus topics 3.2–3.3, 3.8, 3.11.
+MathQuiz({ key: 'unitcircle', title: 'Unit Circle Sprint',
+  intro: ['Exact values of sine, cosine, and tangent on the unit circle.', 'Later rounds add negative angles, secant, and cosecant.'],
+  css: '.mq-board .big { font-size: clamp(1.6rem, 8vw, 2.3rem); } .mq-board svg { max-width: 200px; }',
+  gen(level) {
+    const { rnd, pick, choices, frac, pi } = MQ;
+    const r2 = Math.SQRT2, r3 = Math.sqrt(3);
+    // Every exact value that can come up, as [number, label].
+    const T = [[0, '0'], [1, '1'], [-1, '−1'], [.5, '1/2'], [-.5, '−1/2'], [r2 / 2, '√2/2'], [-r2 / 2, '−√2/2'],
+      [r3 / 2, '√3/2'], [-r3 / 2, '−√3/2'], [r3, '√3'], [-r3, '−√3'], [r3 / 3, '√3/3'], [-r3 / 3, '−√3/3'],
+      [2, '2'], [-2, '−2'], [r2, '√2'], [-r2, '−√2'], [2 * r3 / 3, '2√3/3'], [-2 * r3 / 3, '−2√3/3']];
+    const html = t => { if (!t.includes('/')) return t; const sg = t[0] === '−' ? '−' : '', [n, d] = t.replace('−', '').split('/'); return sg + frac(n, d); };
+    const keyOf = v => v === null ? 'U' : String(T.findIndex(t => Math.abs(t[0] - v) < 1e-9));
+    const txt = k => k === 'U' ? 'undefined' : T[+k][1];
+    const lab = k => k === 'U' ? 'undefined' : html(T[+k][1]);
+
+    // Angles in twelfths of π (15° steps); only the special ones.
+    const STD = [0, 2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18, 20, 21, 22];
+    let k = level === 0 ? pick([0, 2, 3, 4, 6, 12]) : pick(STD);
+    if (level >= 2 && Math.random() < .5) k += pick([-24, 24]);
+    if (level >= 2 && Math.random() < .3) k = -pick(STD.slice(1));
+    const th = k * Math.PI / 12;
+
+    const types = level === 0 ? ['sin', 'cos', 'sin', 'cos', 'deg'] : level === 1 ? ['sin', 'cos', 'tan', 'deg'] : level === 2 ? ['sin', 'cos', 'tan'] : ['sin', 'cos', 'tan', 'sec', 'csc'];
+    const type = pick(types);
+
+    // Draw the angle on a unit circle in the early levels.
+    const draw = () => {
+      const c = 100, R = 76, x = c + R * Math.cos(th), y = c - R * Math.sin(th);
+      const big = k > 12 ? 1 : 0, ax = c + 22 * Math.cos(th), ay = c - 22 * Math.sin(th);
+      const arc = k === 0 ? '' : `<path d="M${c + 22} ${c} A22 22 0 ${big} 0 ${ax} ${ay}" fill="none" stroke="#e8505b" stroke-width="2.5"/>`;
+      return `<svg viewBox="0 0 200 200"><line x1="10" y1="${c}" x2="190" y2="${c}" stroke="#6b6f85"/><line x1="${c}" y1="10" x2="${c}" y2="190" stroke="#6b6f85"/>` +
+        `<circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="#2f6fd6" stroke-width="2.5"/>${arc}` +
+        `<line x1="${c}" y1="${c}" x2="${x}" y2="${y}" stroke="#2b2d3a" stroke-width="3"/><circle cx="${x}" cy="${y}" r="6" fill="#e8505b"/></svg>`;
+    };
+
+    if (type === 'deg') {
+      const kk = pick(STD.slice(1)), deg = kk * 15;
+      if (Math.random() < .5) {
+        const wrong = [kk + 2, kk - 2, kk + 3, 24 - kk, kk * 2].filter(v => v > 0 && v < 24 && v !== kk);
+        return { board: `<div class="big">${deg}°</div>`, q: 'What is this angle in <em>radians</em>?', answer: kk,
+          options: choices(kk, wrong, () => pick(STD.slice(1))).map(v => ({ value: v, label: pi(v, 12) })),
+          hint: 'Multiply degrees by π/180. Handy anchors: 30° = π/6, 45° = π/4, 60° = π/3, 90° = π/2, 180° = π.' };
+      }
+      const wrong = [deg + 30, deg - 30, deg + 45, 360 - deg, deg / 2].filter(v => v > 0 && v !== deg);
+      return { board: `<div class="big">${pi(kk, 12)}</div>`, q: 'What is this angle in <em>degrees</em>?', answer: deg,
+        options: choices(deg, wrong).map(v => ({ value: v, label: v + '°' })), hint: 'Replace π with 180°, then simplify.' };
+    }
+
+    const s = Math.sin(th), c = Math.cos(th);
+    const val = {
+      sin: s, cos: c,
+      tan: Math.abs(c) < 1e-9 ? null : s / c,
+      sec: Math.abs(c) < 1e-9 ? null : 1 / c,
+      csc: Math.abs(s) < 1e-9 ? null : 1 / s,
+    };
+    const ans = keyOf(val[type]);
+    const flip = v => v === null ? null : -v;
+    const pool = [val.sin, val.cos, flip(val[type]), val.tan, type === 'sec' || type === 'csc' ? (type === 'sec' ? c : s) : null].map(keyOf);
+    const family = type === 'tan' ? ['0', '1', '2', '9', '10', '11', '12', 'U'] : type === 'sin' || type === 'cos' ? ['0', '1', '2', '3', '4', '5', '6', '7', '8'] : ['13', '14', '15', '16', '17', '18', '1', '2', 'U'];
+    const angle = pi(k, 12);
+    return { board: level >= 2 ? `<div class="big">${type}(${angle})</div>` : `<div class="mid">θ = ${angle}</div>${draw()}`,
+      q: level >= 2 ? 'Find the exact value.' : `Find <em>${type}(θ)</em>.`, answer: ans,
+      options: choices(ans, pool.filter(p => p !== '-1'), () => pick(family)).map(v => ({ value: v, label: lab(v) })),
+      hint: `On the unit circle, the point at ${angle} is (cos, sin) = (${txt(keyOf(c))}, ${txt(keyOf(s))}). tan = sin/cos, sec = 1/cos, csc = 1/sin.` };
+  } });
+</script>
+</body>
+</html>

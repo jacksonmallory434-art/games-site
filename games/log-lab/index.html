@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Log Lab</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Log Lab — a MathAdvice original. AP Precalculus topics 2.9–2.13.
+MathQuiz({ key: 'loglab', title: 'Log Lab',
+  intro: ['Evaluate logarithms, use the log properties, and solve exponential equations.', 'Remember: log<sub>b</sub>(x) asks "b to what power gives x?"'],
+  gen(level) {
+    const { rnd, pick, choices, neg, frac } = MQ;
+    const nz = (a, b) => { let v; do v = rnd(a, b); while (!v); return v; };
+    const MAX = { 2: 6, 3: 4, 4: 3, 5: 3, 10: 4 };
+    const b = pick([2, 3, 4, 5, 10, 2, 3]);
+    const log = base => base === 10 ? 'log ' : base === 'e' ? 'ln ' : `log<sub>${base}</sub> `;
+    const types = ['eval', 'eval'];
+    if (level >= 1) types.push('prop', 'solveExp');
+    if (level >= 2) types.push('solveLog', 'prop', 'ln');
+    if (level >= 3) types.push('change', 'change');
+    const type = pick(types);
+
+    if (type === 'eval') {
+      const k = level >= 1 ? rnd(-2, MAX[b]) : rnd(0, MAX[b]);
+      const arg = k >= 0 ? String(b ** k) : frac(1, b ** -k);
+      return { board: `<div class="big">${log(b)}${arg}</div>`, q: 'What is it equal to?', answer: k,
+        options: choices(k, [-k, k + 1, k - 1, b * k, 2 * k], () => rnd(-3, 7)),
+        hint: `${b} to what power gives ${k >= 0 ? b ** k : '1/' + b ** -k}? ${b}<sup>${neg(k)}</sup> = ${k >= 0 ? b ** k : '1/' + b ** -k}.` };
+    }
+    if (type === 'ln') {
+      const k = rnd(-3, 6), form = pick(['pow', 'exp']);
+      const shown = form === 'pow' ? `ln(e<sup>${neg(k)}</sup>)` : `e<sup>ln ${Math.abs(k) + 2}</sup>`;
+      const ans = form === 'pow' ? k : Math.abs(k) + 2;
+      return { board: `<div class="big">${shown}</div>`, q: 'Simplify.', answer: ans, options: choices(ans, [ans + 1, -ans, ans - 1, 1, 0], () => rnd(-4, 9)),
+        hint: 'ln and e<sup>x</sup> undo each other: ln(e<sup>k</sup>) = k and e<sup>ln k</sup> = k.' };
+    }
+    if (type === 'prop') {
+      const kind = pick(['add', 'sub', 'pow']);
+      const base = pick([2, 3, 5, 10]);
+      if (kind === 'add') {
+        const x = rnd(2, 9), y = rnd(2, 9), ans = x * y;
+        return { board: `<div class="mid">${log(base)}${x} + ${log(base)}${y} = ${log(base)}?</div>`, q: 'What goes in the box?', answer: ans,
+          options: choices(ans, [x + y, x ** y, ans + base, Math.abs(x - y) || 1]), hint: 'Adding logs multiplies the inputs: log(a) + log(b) = log(ab).' };
+      }
+      if (kind === 'sub') {
+        const y = rnd(2, 9), ans = rnd(2, 9), x = ans * y;
+        return { board: `<div class="mid">${log(base)}${x} − ${log(base)}${y} = ${log(base)}?</div>`, q: 'What goes in the box?', answer: ans,
+          options: choices(ans, [x - y, x * y, ans + 1, y]), hint: 'Subtracting logs divides the inputs: log(a) − log(b) = log(a/b).' };
+      }
+      const k = rnd(2, 3), x = rnd(2, k === 2 ? 9 : 5), ans = x ** k;
+      return { board: `<div class="mid">${k}·${log(base)}${x} = ${log(base)}?</div>`, q: 'What goes in the box?', answer: ans,
+        options: choices(ans, [k * x, x + k, k ** x, ans - 1]), hint: 'A number in front becomes a power: k·log(a) = log(a<sup>k</sup>).' };
+    }
+    if (type === 'solveExp') {
+      const k = rnd(1, MAX[b]), c = nz(-3, 3), ans = k - c;
+      const ex = `x ${c < 0 ? '−' : '+'} ${Math.abs(c)}`;
+      return { board: `<div class="big">${b}<sup>${ex}</sup> = ${b ** k}</div>`, q: 'Solve for <em>x</em>.', answer: ans,
+        options: choices(ans, [k + c, k, b ** k / b, ans + 1].map(Math.round)), hint: `Write ${b ** k} as ${b}<sup>${k}</sup>, so ${ex} = ${k}.` };
+    }
+    if (type === 'solveLog') {
+      const base = pick([2, 3, 5]), k = rnd(1, base === 2 ? 5 : 3), c = nz(-6, 6), ans = base ** k + c;
+      const arg = `x ${c < 0 ? '+' : '−'} ${Math.abs(c)}`;
+      return { board: `<div class="big">${log(base)}(${arg}) = ${k}</div>`, q: 'Solve for <em>x</em>.', answer: ans,
+        options: choices(ans, [base ** k - c, base * k + c, k ** base + c, base ** k]), hint: `Rewrite in exponential form: ${arg} = ${base}<sup>${k}</sup> = ${base ** k}.` };
+    }
+    // Change of base: b^x = N with N not a power of b
+    const base = pick([2, 3, 5, 10]);
+    let N; do N = rnd(3, 40); while (Math.abs(Math.log(N) / Math.log(base) - Math.round(Math.log(N) / Math.log(base))) < 1e-9);
+    const L = s => 'ln ' + s;
+    const opts = [
+      { value: 'ok', label: frac(L(N), L(base)) },
+      { value: 'w1', label: frac(L(base), L(N)) },
+      { value: 'w2', label: frac(N, base) },
+      { value: 'w3', label: frac(N, L(base)) },
+    ];
+    return { board: `<div class="big">${base}<sup>x</sup> = ${N}</div>`, q: 'Solve for <em>x</em>.', answer: 'ok', options: MQ.shuffle(opts).map(o => ({ value: o.value, label: 'x = ' + o.label })),
+      hint: `Take ln of both sides: x·ln ${base} = ln ${N}, so x = ln ${N} ÷ ln ${base}.` };
+  } });
+</script>
+</body>
+</html>

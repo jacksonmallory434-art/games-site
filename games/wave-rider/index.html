@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Wave Rider</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Wave Rider — a MathAdvice original. AP Precalculus topics 3.4–3.6.
+MathQuiz({ key: 'waverider', title: 'Wave Rider',
+  intro: ['Read sine and cosine waves.', 'Find the amplitude, midline, period, and more, first from graphs, then from equations.'],
+  css: '.mq-board svg { max-width: 360px; } .mq-board .mid { font-size: clamp(1.1rem, 5vw, 1.45rem); }',
+  gen(level) {
+    const { rnd, pick, choices, neg, frac, pi } = MQ;
+
+    if (level < 2 || Math.random() < .35) {
+      // Graph rounds
+      const A = rnd(1, level ? 4 : 3), P = pick([2, 4, 6, 8, 12]), D = rnd(-2, 2), shift = rnd(0, 3), fn = pick(['sin', 'cos']);
+      const y = x => A * Math[fn](2 * Math.PI * (x - shift) / P) + D;
+      const X0 = 30, Y0 = 115, SX = 25, SY = 15; // x: 0..12, y: −6..6
+      const px = x => X0 + x * SX, py = v => Y0 - v * SY;
+      let g = '';
+      for (let i = 0; i <= 12; i++) g += `<line x1="${px(i)}" y1="${py(6.5)}" x2="${px(i)}" y2="${py(-6.5)}" stroke="#d6e4f0"/>`;
+      for (let j = -6; j <= 6; j++) g += `<line x1="${px(0)}" y1="${py(j)}" x2="${px(12)}" y2="${py(j)}" stroke="#d6e4f0"/>`;
+      g += `<line x1="${px(0)}" y1="${py(0)}" x2="${px(12)}" y2="${py(0)}" stroke="#6b6f85" stroke-width="1.5"/><line x1="${px(0)}" y1="${py(6.5)}" x2="${px(0)}" y2="${py(-6.5)}" stroke="#6b6f85" stroke-width="1.5"/>`;
+      for (let i = 2; i <= 12; i += 2) g += `<text x="${px(i)}" y="${py(0) + 14}" font-size="11" text-anchor="middle" fill="#2b2d3a">${i}</text>`;
+      for (let j = -6; j <= 6; j += 2) if (j) g += `<text x="${px(0) - 6}" y="${py(j) + 4}" font-size="11" text-anchor="end" fill="#2b2d3a">${neg(j)}</text>`;
+      let d = '';
+      for (let x = 0; x <= 12.001; x += .1) d += (d ? ' L' : 'M') + px(x).toFixed(1) + ' ' + py(y(x)).toFixed(1);
+      g += `<path d="${d}" fill="none" stroke="#2f6fd6" stroke-width="3"/>`;
+      const board = `<svg viewBox="0 0 340 230">${g}</svg>`;
+      const type = pick(['amp', 'mid', 'period', 'max', 'min', ...(level ? ['period', 'mid'] : [])]);
+      if (type === 'amp') return { board, q: 'What is the <em>amplitude</em>?', answer: A, options: choices(A, [2 * A, A + D, A + 1, A - 1].filter(v => v > 0)),
+        hint: 'Amplitude is the distance from the midline to a peak: (max − min) ÷ 2.' };
+      if (type === 'period') return { board, q: 'What is the <em>period</em>?', answer: P, options: choices(P, [P / 2, 2 * P, P + 2, A * 2].filter(v => v > 0 && v % 1 === 0)),
+        hint: 'The period is the horizontal length of one full cycle, like peak to the next peak.' };
+      if (type === 'max') return { board, q: 'What is the <em>maximum</em> value?', answer: D + A, options: choices(D + A, [A, D - A, D + A + 1, 2 * A]),
+        hint: 'Find the y-value at the top of a peak.' };
+      if (type === 'min') return { board, q: 'What is the <em>minimum</em> value?', answer: D - A, options: choices(D - A, [-A, D + A, D - A - 1, D]),
+        hint: 'Find the y-value at the bottom of a valley.' };
+      const yk = v => ({ value: v, label: 'y = ' + neg(v) });
+      return { board, q: 'What is the <em>midline</em>?', answer: D, options: choices(D, [D + A, D - A, 0, D + 1]).map(yk),
+        hint: 'The midline is halfway between the max and the min: (max + min) ÷ 2.' };
+    }
+
+    // Equation rounds: y = A·sin(B(x − C)) + D
+    const A = pick([1, 2, 3, 4, 5, -2, -3]), D = rnd(-4, 4), fn = pick(['sin', 'cos']);
+    // B, and the period 2π/B. For B without π the period is a multiple of π: per = [n, d] means nπ/d.
+    // For B with π in it, the period is a plain number.
+    const BS = [{ b: '2', per: [1, 1] }, { b: '3', per: [2, 3] }, { b: '4', per: [1, 2] }, { b: '½', per: [4, 1] },
+      { b: 'π', num: 2 }, { b: 'π/2', num: 4, bl: frac('π', 2) }, { b: 'π/3', num: 6, bl: frac('π', 3) }, { b: 'π/6', num: 12, bl: frac('π', 6) }];
+    const B = pick(BS);
+    const C = level >= 3 ? pick([1, 2, 3, -1, -2]) : 0;
+    const blab = B.bl || B.b;
+    const inner = C === 0 ? `${blab}x` : `${blab}(x ${C > 0 ? '−' : '+'} ${Math.abs(C)})`;
+    const eq = `y = ${A === 1 ? '' : A === -1 ? '−' : neg(A)}${fn}(${inner})${D ? ` ${D > 0 ? '+' : '−'} ${Math.abs(D)}` : ''}`;
+    const board = `<div class="mid">${eq}</div>`;
+    const type = pick(['amp', 'mid', 'period', 'period', ...(C ? ['shift', 'shift'] : [])]);
+    if (type === 'period') {
+      const { gcd } = MQ;
+      const pk = (n, d) => { const g = gcd(n, d); return 'p' + n / g + '/' + d / g; };
+      const lab = v => { if (v[0] === 'n') return v.slice(1); const [n, d] = v.slice(1).split('/').map(Number); return pi(n, d); };
+      let ans, wrong;
+      if (B.num) { ans = 'n' + B.num; wrong = ['n' + B.num / 2, 'n' + B.num * 2, pk(B.num, 1), 'n' + (B.num + 1)]; }
+      else {
+        const [n, d] = B.per; ans = pk(n, d);
+        wrong = [pk(n * 2, d), pk(n, d * 2), pk(2 * d, n * 2) /* B·π/2 mix-up */, 'n' + (+(n / d * 2).toFixed(2))];
+        if (B.b !== '½') wrong.push(pk(+B.b, 1));
+      }
+      const opts = choices(ans, wrong.filter(w => w !== ans && !w.includes('.')), () => pk(pick([1, 2, 3, 4, 6]), pick([1, 2, 3]))).map(v => ({ value: v, label: lab(v) }));
+      return { board, q: 'What is the <em>period</em>?', answer: ans, options: opts, hint: `Period = 2π ÷ B. Here B = ${B.b}.` };
+    }
+    if (type === 'amp') return { board, q: 'What is the <em>amplitude</em>?', answer: Math.abs(A), options: choices(Math.abs(A), [A, 2 * Math.abs(A), Math.abs(A) + Math.abs(D), Math.abs(A) + 1].filter(v => v > 0)),
+      hint: 'Amplitude is |A|, the absolute value of the number in front. A negative A flips the wave but doesn\'t change the amplitude.' };
+    if (type === 'shift') {
+      const yk = v => ({ value: v, label: (v > 0 ? 'Right ' : 'Left ') + Math.abs(v) });
+      return { board, q: 'What is the <em>phase shift</em>?', answer: C, options: choices(C, [-C, C * 2, C + (C > 0 ? 1 : -1)].filter(Boolean)).map(yk),
+        hint: 'In B(x − C), the graph moves right C. A plus sign inside, like (x + 2), means it moves left.' };
+    }
+    return { board, q: 'What is the <em>midline</em>?', answer: D, options: choices(D, [-D, A, D + Math.abs(A), D + 1]).map(v => ({ value: v, label: 'y = ' + neg(v) })),
+      hint: 'The midline is y = D, the number added at the end.' };
+  } });
+</script>
+</body>
+</html>

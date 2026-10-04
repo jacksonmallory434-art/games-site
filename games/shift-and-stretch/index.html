@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Shift and Stretch</title>
+</head>
+<body>
+<script src="../../js/mathquiz.js"></script>
+<script>
+// Shift and Stretch — a MathAdvice original. AP Precalculus topic 1.12.
+MathQuiz({ key: 'shiftstretch', title: 'Shift and Stretch',
+  intro: ['A point is on the graph of f, and g is a transformed version of f.', 'Find where that point lands on the graph of g.'],
+  css: '.mq-board p { margin: 8px 0 0; font-weight: 700; }',
+  gen(level) {
+    const { rnd, pick, choices, neg } = MQ;
+    const a = level >= 1 ? pick([1, 2, 3, -1, -2, 2]) : 1;
+    const b = level >= 2 ? pick([2, 3, -1, -2, 2, 1]) : 1;
+    const h = rnd(-5, 5), k = rnd(-6, 6);
+    const u = rnd(-3, 3), p = u * b, q = rnd(-5, 5);
+    const X = u + h, Y = a * q + k;
+
+    const xmh = h === 0 ? 'x' : `x ${h > 0 ? '−' : '+'} ${Math.abs(h)}`;
+    const coef = c => c === 1 ? '' : c === -1 ? '−' : neg(c);
+    let inner;
+    if (b === 1) inner = xmh;
+    else if (h !== 0 && level >= 3 && Math.random() < .5) {
+      // Written expanded, like f(2x − 6), so you have to factor out b first.
+      const c = b * h; inner = `${coef(b)}x ${c > 0 ? '−' : '+'} ${Math.abs(c)}`;
+    } else inner = h === 0 ? `${coef(b)}x` : `${coef(b)}(${xmh})`;
+    const K = k === 0 ? '' : ` ${k > 0 ? '+' : '−'} ${Math.abs(k)}`;
+    const pt = (x, y) => `(${neg(x)}, ${neg(y)})`;
+
+    const board = `<div class="mid">g(x) = ${coef(a)}f(${inner})${K}</div><p>The point ${pt(p, q)} is on the graph of f.</p>`;
+    const key = (x, y) => x + ',' + y;
+    const wrong = [
+      [u - h, Y],               // shifted the wrong way
+      [X, a * (q + k)],         // added before stretching
+      [p * b + h, Y],           // multiplied x by b instead of dividing
+      [X, a * q - k],
+      [p + h, q + k],           // ignored the stretches
+      [X, -Y],
+    ].map(w => key(...w));
+    const ans = key(X, Y);
+    return { board, q: 'Which point must be on the graph of <em>g</em>?', answer: ans,
+      options: choices(ans, wrong, () => key(X + rnd(-3, 3), Y + rnd(-3, 3))).map(s => ({ value: s, label: pt(...s.split(',').map(Number)) })),
+      hint: `Inside the parentheses works backwards on x: x − h moves right h, and multiplying x by b divides x-values by b. Outside works directly on y: multiply by a, then add k. Here x: ${neg(p)} → ${neg(X)}, y: ${neg(q)} → ${neg(Y)}.` };
+  } });
+</script>
+</body>
+</html>
