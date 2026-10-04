@@ -1,0 +1,10 @@
+// Cloudflare deploy settings. Preview builds for pull requests need this file.
+{
+  "name": "games-site",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    // Show 404.html for links that don't match a page.
+    "not_found_handling": "404-page"
+  }
+}
