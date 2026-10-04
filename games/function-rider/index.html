@@ -2,64 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Function Rider</title>
+<script src="../_kit/kit.js"></script>
 <style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #12131a; color: #ecedf3; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
-  body { display: flex; align-items: center; justify-content: center; }
-  .app { width: min(100vw, calc((100vh - 112px) * 800 / 480), 800px); position: relative; }
-  .bar { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 4px; }
-  .bar b { font-size: 1.05rem; }
-  .bar .stars { color: #ffcc33; letter-spacing: 2px; font-size: 1.15rem; }
-  .bar .sp { flex: 1; }
-  .bar button { background: none; border: 1px solid #3a3e52; color: #c9cde0; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: .9rem; cursor: pointer; }
-  .bar button:hover { border-color: #ffcc33; color: #fff; }
-  canvas { display: block; width: 100%; height: auto; aspect-ratio: 800 / 480; border-radius: 12px; touch-action: none; }
-  .ctrl { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-  .eq { flex: 1; display: flex; align-items: center; background: #1c1e29; border: 2px solid #2c2f3e; border-radius: 12px; padding: 0 12px; min-width: 0; }
-  .eq:focus-within { border-color: #ffcc33; }
-  .eq span { font-weight: 800; font-size: 1.25rem; color: #9a9db0; margin-right: 8px; white-space: nowrap; }
-  .eq input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #fff; font: 700 1.3rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding: 11px 0; }
-  .go { font: inherit; font-weight: 800; font-size: 1.15rem; padding: 12px 22px; border: 0; border-radius: 12px; background: #ffcc33; color: #111; cursor: pointer; }
-  .go:disabled { opacity: .5; cursor: default; }
-  .msg { min-height: 1.3em; margin: 8px 4px 0; color: #9a9db0; font-size: .95rem; }
-  .msg.err { color: #ff8a8a; }
-  .overlay { position: absolute; inset: 0; background: rgba(12,13,20,.93); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
-  .overlay[hidden] { display: none; }
-  .overlay h1 { color: #ffcc33; font-size: clamp(1.8rem, 6vw, 2.6rem); margin: 0 0 10px; }
-  .overlay p { color: #c9cde0; max-width: 520px; margin: 6px 0; line-height: 1.5; }
-  .overlay .big { font-size: 2.6rem; color: #ffcc33; letter-spacing: 6px; margin: 6px 0; }
-  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0 6px; }
-  .levels button { font: inherit; font-weight: 800; width: 74px; padding: 8px 0 5px; border-radius: 10px; border: 2px solid #2c2f3e; background: #1c1e29; color: #fff; cursor: pointer; }
-  .levels button small { display: block; color: #ffcc33; font-size: .7rem; letter-spacing: 1px; min-height: 1em; }
-  .levels button:disabled { opacity: .35; cursor: default; }
-  .levels button:not(:disabled):hover { border-color: #ffcc33; }
-  .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
-  .ghost { font: inherit; font-weight: 700; padding: 12px 20px; border-radius: 12px; background: transparent; border: 2px solid #3a3e52; color: #c9cde0; cursor: pointer; }
-  @media (max-width: 520px) { .levels button { width: 54px; } .go { padding: 12px 14px; } }
+  .ma-lv { grid-template-columns: repeat(8, 1fr); max-width: 27em; gap: .45em; }
+  @media (max-width: 600px), (max-height: 520px) { .ma-how { display: none; } }
+  .fr-eq { position: absolute; left: 23.75%; top: 1.6667%; width: 51.25%; height: 8%; z-index: 3; display: flex; align-items: center; gap: .45em; padding: 0 .8em;
+    border-radius: .75em; background: rgba(10,14,32,.78); border: 1px solid rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); cursor: text; transition: border-color .15s, box-shadow .15s; }
+  .fr-eq:focus-within { border-color: #4fd1ff; box-shadow: 0 0 1.1em rgba(79,209,255,.4), inset 0 1px 0 rgba(255,255,255,.06); }
+  .fr-eq.err { border-color: #ff5d73; }
+  .fr-eq span { font-weight: 800; font-size: 1.3em; color: #8fdcff; white-space: nowrap; }
+  .fr-eq input { flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: 0; color: #fff; font: 700 1.35em Lexend, system-ui, sans-serif; padding: 0; -webkit-user-select: text; user-select: text; }
+  .fr-eq input::placeholder { color: rgba(200,210,240,.4); font-weight: 500; font-size: .78em; }
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="bar"><b id="lvname">Level 1</b><span class="stars" id="lvstars">☆☆☆</span><span class="sp"></span><button id="hintBtn">Hint</button><button id="menuBtn">Levels</button></div>
-  <canvas id="c" width="800" height="480"></canvas>
-  <div class="ctrl">
-    <label class="eq"><span>y =</span><input id="eq" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type an equation, like 2x + 1"></label>
-    <button class="go" id="go">Ride!</button>
-  </div>
-  <p class="msg" id="msg"></p>
-  <div class="overlay" id="ov"></div>
-</div>
 <script>
 // Function Rider — a MathAdvice original.
 // Type an equation. A sled rides your graph from the start line to the flag, grabbing stars and dodging blocks.
 (() => {
-  const W = 800, H = 480, U = 40, XMIN = -10, YMAX = 6; // 40 pixels per unit on both axes
-  const sx = x => (x - XMIN) * U, sy = y => (YMAX - y) * U;
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-  const dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
-  const $ = id => document.getElementById(id);
+  const W = 800, H = 600, U = 40, XMIN = -10, YMAX = 6, GY = 64, GH = 480; // graph: 40 px per unit, drawn from y = GY
+  const sx = x => (x - XMIN) * U, sy = y => GY + (YMAX - y) * U;
+  const CYAN = '#4fd1ff', GOLD = '#ffcc33', GREEN = '#3ee6a0', RED = '#ff4d6a';
 
   // ---------- A small, safe math parser (no eval). Supports + − × ÷ ^, parentheses, |x|, implicit multiplication,
   // sin cos tan sqrt abs ln log, pi and e.
@@ -118,7 +83,7 @@
     return f;
   }
 
-  // ---------- Levels. Each has a start x, a flag, 3 stars, blocks [x1, y1, x2, y2], and a hint.
+
   const LEVELS = [
     { name: 'Flat out', x0: -9, flag: [9, 2], stars: [[-5, 2], [0, 2], [5, 2]], hint: 'All the stars are at the same height. A flat line looks like y = 3.' },
     { name: 'Uphill', x0: -6, flag: [5.5, 5.5], stars: [[-3, -3], [0, 0], [3, 3]], hint: 'Each star has the same x and y. What equation makes y equal x?' },
@@ -137,56 +102,92 @@
     { name: 'Grand finale', x0: -7, flag: [7, 5.17], stars: [[-6, 3], [0, -3], [6, 3]], blocks: [[-1, -1, 1, 6]], hint: 'More than one function works here. A parabola with its vertex at (0, −3) is one idea.' },
   ];
 
-  const SAVE = 'ma-functionrider';
-  let save = { stars: {} };
-  try { save = JSON.parse(localStorage.getItem(SAVE)) || save; } catch (e) {}
-  const store = () => { try { localStorage.setItem(SAVE, JSON.stringify(save)); } catch (e) {} };
+  const HOW = ['Type an equation for <b>y</b> in terms of <b>x</b>, then press <b>Ride!</b>', 'Your sled rides the graph from the start line to the flag.', 'Grab all 3 stars and steer around the red blocks.'];
+  const rideBtn = { x: 608, y: 10, w: 92, h: 46, label: 'Ride!', size: 20, color: GOLD };
+  const hintBtn = { x: 562, y: 551, w: 64, h: 40, label: 'Hint', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+  const levelsBtn = { x: 632, y: 551, w: 70, h: 40, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'function-rider', title: 'Function Rider', accent: CYAN, accent2: GOLD, bg: ['#0a1430', '#170b2e'], w: W, h: H,
+    tagline: 'Type an equation and ride its graph to the flag.', how: HOW,
+    noMenu: true, update: step, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(rideBtn, x, y)) go();
+      else if (K.hit(hintBtn, x, y)) { K.sfx.click(); setMsg('Hint: ' + lvl.hint); }
+      else if (K.hit(levelsBtn, x, y)) menu();
+    },
+    key(k, e) {
+      // Typing anywhere goes to the equation box.
+      if (K.state === 'play' && document.activeElement !== inp && (k.length === 1 || k === 'Backspace') && !e.ctrlKey && !e.metaKey) inp.focus();
+      if (K.state === 'play' && k === 'Enter') go();
+    },
+  });
+
+  // ---------- the equation box (a real input, so phone keyboards work)
+  const box = document.createElement('label');
+  box.className = 'fr-eq';
+  box.innerHTML = '<span>y =</span><input id="eq" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="type an equation, like 2x + 1">';
+  K.stage.appendChild(box);
+  const inp = box.querySelector('input');
+  const fitBox = () => { box.style.fontSize = parseFloat(K.stage.style.width) / W * 16 + 'px'; };
+  addEventListener('resize', fitBox); fitBox();
+  inp.addEventListener('input', () => { if (!ride || ride.done) { ride = null; compile(); } });
+  // Keep keys typed into the box away from the game's own key handling (which would block spaces and arrows).
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); go(); } });
+
+  // ---------- progress (older saves used a different key)
+  let save = K.load('save', null);
+  if (!save) { try { save = JSON.parse(localStorage.getItem('ma-functionrider')); } catch (e) {} }
+  if (!save || !save.stars) save = { stars: {} };
+  const store = () => K.save('save', save);
   const unlocked = () => { let n = 1; while (n < LEVELS.length && save.stars[n] !== undefined) n++; return n; };
 
-  let li = 0, lvl = LEVELS[0], f = null, ride = null, got = [], parts = [], last = 0, time = 0, shake = 0, eqs = {};
+  let li = 0, lvl = LEVELS[0], f = null, ride = null, got = [], eqs = {}, msg = '', msgErr = false;
 
   function load(i) {
-    li = i; lvl = LEVELS[i]; ride = null; got = []; parts = [];
-    $('lvname').textContent = `Level ${i + 1}: ${lvl.name}`;
-    const best = save.stars[i + 1] || 0; $('lvstars').textContent = '★'.repeat(best) + '☆'.repeat(3 - best);
-    $('eq').value = eqs[i] || ''; compile(); $('ov').hidden = true;
-    setMsg('Collect the 3 stars and reach the flag. Start x = ' + fmt(lvl.x0) + '.');
-    $('go').disabled = false;
+    li = i; lvl = LEVELS[i]; ride = null; got = [];
+    inp.value = eqs[i] || ''; compile();
+    if (!inp.value.trim()) setMsg('Grab the 3 stars and reach the flag. Start x = ' + fmt(lvl.x0) + '.');
+    K.state = 'play'; K.hideOverlay();
+    if (matchMedia('(pointer: fine)').matches) inp.focus({ preventScroll: true });
   }
   const fmt = v => String(v).replace('-', '−');
-  function setMsg(t, err) { $('msg').textContent = t; $('msg').className = 'msg' + (err ? ' err' : ''); }
+  function setMsg(t, err) { msg = t; msgErr = !!err; box.classList.toggle('err', !!err && !ride); }
   function compile() {
-    const src = $('eq').value; eqs[li] = src;
-    if (!src.trim()) { f = null; return; }
+    const src = inp.value; eqs[li] = src;
+    if (!src.trim()) { f = null; setMsg('Grab the 3 stars and reach the flag. Start x = ' + fmt(lvl.x0) + '.'); return; }
     try { f = parse(src); setMsg('Press Ride! (or Enter) when you\'re ready.'); }
     catch (e) { f = null; if (e) setMsg(String(e), true); }
   }
-  $('eq').addEventListener('input', () => { if (!ride) compile(); });
-  $('eq').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-  $('go').addEventListener('click', go);
-  $('hintBtn').addEventListener('click', () => setMsg('Hint: ' + lvl.hint));
-  $('menuBtn').addEventListener('click', menu);
 
   const val = x => { const y = f(x); return typeof y === 'number' ? y : NaN; };
   function go() {
-    if (ride && !ride.done) return;
+    if (K.state !== 'play' || (ride && !ride.done)) return;
     compile();
-    if (!f) { setMsg($('eq').value.trim() ? $('msg').textContent : 'Type an equation first.', true); return; }
-    got = []; parts = [];
+    if (!f) { if (!inp.value.trim()) setMsg('Type an equation first.', true); K.sfx.bad(); return; }
+    got = [];
     const y0 = val(lvl.x0);
-    if (!isFinite(y0)) { setMsg(`Your graph doesn't exist at the start, x = ${fmt(lvl.x0)}.`, true); return; }
+    if (!isFinite(y0)) { setMsg(`Your graph doesn't exist at the start, x = ${fmt(lvl.x0)}.`, true); K.sfx.bad(); return; }
     ride = { x: lvl.x0, y: y0, done: false, trail: [] };
-    $('go').disabled = true; setMsg('Riding…');
+    if (!matchMedia('(pointer: fine)').matches) inp.blur(); // drop the phone keyboard so the ride is visible
+    setMsg('Riding…'); K.sfx.whoosh();
   }
-  function crash(msg) { ride.done = true; ride.crashed = true; shake = .4; burst(ride.x, ride.y, '#ff6b6b', 30); setMsg(msg, true); $('go').disabled = false; }
+  function crash(m) {
+    ride.done = true; ride.crashed = true;
+    K.burst(sx(ride.x), K.clamp(sy(ride.y), GY + 10, GY + GH - 10), RED, 30, 280, 5); K.shake(10); K.sfx.boom();
+    setMsg(m, true);
+  }
   function finish() {
-    ride.done = true; $('go').disabled = false;
+    ride.done = true;
     const n = got.length, prev = save.stars[li + 1] || 0;
     save.stars[li + 1] = Math.max(prev, n); store();
-    for (let i = 0; i < 40; i++) burst(lvl.flag[0], lvl.flag[1], ['#ffcc33', '#3ecf8e', '#7ab8ff', '#ff7ab8'][i % 4], 1);
-    setTimeout(() => showWin(n), 700);
+    const fx = sx(lvl.flag[0]), fy = sy(lvl.flag[1]);
+    [GOLD, GREEN, CYAN, '#ff6bd6'].forEach(c => K.burst(fx, fy, c, 14, 300, 5));
+    K.sfx.win(); K.state = 'over';
+    const at = li;
+    setTimeout(() => { if (K.state === 'over' && li === at) showWin(n); }, 800);
   }
-  function burst(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = 1 + Math.random() * 5; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s + 2, life: .9, c }); } }
   const inBlock = (x, y) => (lvl.blocks || []).some(([x1, y1, x2, y2]) => x > x1 - .08 && x < x2 + .08 && y > y1 - .08 && y < y2 + .08);
 
   function step(dt) {
@@ -202,135 +203,171 @@
       ride.x = nx;
       if (!isFinite(ny)) return crash(`Your graph has a gap at x ≈ ${ride.x.toFixed(1)}. Watch out for square roots of negatives and dividing by zero.`);
       ride.y = ny;
-      if (Math.abs(ny) > 6.6) return crash(`Your sled flew off the screen near x = ${ride.x.toFixed(1)}. Your graph goes too ${ny > 0 ? 'high' : 'low'} there.`);
+      if (Math.abs(ny) > 6.6) return crash(`Your sled flew off the screen near x = ${fmt(+ride.x.toFixed(1))}. Your graph goes too ${ny > 0 ? 'high' : 'low'} there.`);
       if (inBlock(nx, ny)) return crash('Crash! Your graph runs into a block. Change your equation to go around it.');
-      lvl.stars.forEach((s, i) => { if (!got.includes(i) && Math.hypot(s[0] - nx, s[1] - ny) < .5) { got.push(i); burst(s[0], s[1], '#ffcc33', 20); } });
+      lvl.stars.forEach((s, i) => {
+        if (!got.includes(i) && Math.hypot(s[0] - nx, s[1] - ny) < .5) {
+          got.push(i); K.burst(sx(s[0]), sy(s[1]), GOLD, 20, 240, 4); K.float(sx(s[0]), sy(s[1]) - 26, `★ ${got.length}/3`, GOLD, 20); K.sfx.note(660 + got.length * 160, 0.18);
+        }
+      });
       if (nx >= lvl.flag[0]) {
         if (Math.abs(ny - lvl.flag[1]) < .55) return finish();
         return crash(`Missed the flag. At x = ${fmt(lvl.flag[0])} your graph is at y = ${fmt(+ny.toFixed(2))}, but the flag is at y = ${fmt(lvl.flag[1])}.`);
       }
     }
-    ride.trail.push([ride.x, ride.y]); if (ride.trail.length > 30) ride.trail.shift();
+    ride.trail.push([sx(ride.x), sy(ride.y)]); if (ride.trail.length > 24) ride.trail.shift();
   }
 
-  // ---------- Drawing
-  function drawGrid() {
-    ctx.fillStyle = '#f7f5ee'; ctx.fillRect(0, 0, W, H);
-    ctx.lineWidth = 1;
-    for (let x = -10; x <= 10; x++) { ctx.strokeStyle = x % 2 ? '#e3eaf3' : '#cfdbe9'; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
-    for (let y = -6; y <= 6; y++) { ctx.strokeStyle = y % 2 ? '#e3eaf3' : '#cfdbe9'; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
-    ctx.strokeStyle = '#6b6f85'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, sy(0)); ctx.lineTo(W, sy(0)); ctx.moveTo(sx(0), 0); ctx.lineTo(sx(0), H); ctx.stroke();
-    ctx.fillStyle = '#5a5f75'; ctx.font = '700 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (let x = -8; x <= 8; x += 2) if (x) ctx.fillText(fmt(x), sx(x), sy(0) + 5);
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    for (let y = -4; y <= 4; y += 2) if (y) ctx.fillText(fmt(y), sx(0) - 6, sy(y));
+  // ---------- drawing
+  function drawGrid(c) {
+    c.fillStyle = 'rgba(5,8,22,.72)'; c.fillRect(0, GY, W, GH);
+    for (let x = -10; x <= 10; x++) { c.fillStyle = x % 2 ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.09)'; c.fillRect(sx(x), GY, 1, GH); }
+    for (let y = -6; y <= 6; y++) { c.fillStyle = y % 2 ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.09)'; c.fillRect(0, sy(y), W, 1); }
+    c.fillStyle = 'rgba(190,205,255,.5)'; c.fillRect(0, sy(0) - 1, W, 2); c.fillRect(sx(0) - 1, GY, 2, GH);
+    for (let x = -8; x <= 8; x += 2) if (x) K.text(fmt(x), sx(x), sy(0) + 12, 11, 'rgba(200,212,245,.6)', { weight: 600, c });
+    for (let y = -4; y <= 4; y += 2) if (y) K.text(fmt(y), sx(0) - 8, sy(y), 11, 'rgba(200,212,245,.6)', { weight: 600, c, align: 'right' });
+    c.fillStyle = 'rgba(79,209,255,.35)'; c.fillRect(0, GY, W, 1); c.fillRect(0, GY + GH - 1, W, 1);
   }
-  function curve(dashed) {
+  // Samples the graph between two x values; returns pieces split wherever it's undefined or way off screen.
+  function pieces(x0, x1, dx) {
+    const out = []; let cur = null;
+    for (let x = x0; x <= x1 + 1e-9; x += dx) {
+      const y = val(x);
+      if (!isFinite(y) || Math.abs(y) > 50) { cur = null; continue; }
+      if (!cur) out.push(cur = []);
+      cur.push([sx(x), sy(y)]);
+    }
+    return out.filter(p => p.length > 1);
+  }
+  function drawCurve(c) {
     if (!f) return;
-    ctx.save(); ctx.beginPath(); let pen = false;
-    for (let px = 0; px <= W; px += 2) {
-      const x = XMIN + px / U, y = val(x);
-      if (!isFinite(y) || Math.abs(y) > 50) { pen = false; continue; }
-      pen ? ctx.lineTo(px, sy(y)) : ctx.moveTo(px, sy(y)); pen = true;
-    }
-    ctx.strokeStyle = dashed ? 'rgba(47,111,214,.55)' : '#2f6fd6'; ctx.lineWidth = dashed ? 3 : 4;
-    if (dashed) ctx.setLineDash([10, 8]);
-    ctx.stroke(); ctx.restore();
-    // The part the sled will ride, drawn solid.
-    if (dashed) {
-      ctx.beginPath(); pen = false;
-      for (let x = lvl.x0; x <= lvl.flag[0] + 1e-9; x += .05) { const y = val(x); if (!isFinite(y) || Math.abs(y) > 50) { pen = false; continue; } pen ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)); pen = true; }
-      ctx.strokeStyle = 'rgba(47,111,214,.9)'; ctx.lineWidth = 4; ctx.stroke();
+    c.save(); c.beginPath(); c.rect(0, GY, W, GH); c.clip();
+    c.setLineDash([9, 8]); c.strokeStyle = 'rgba(79,209,255,.4)'; c.lineWidth = 2.5;
+    for (const p of pieces(XMIN, XMIN + W / U, 2 / U)) { c.beginPath(); p.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); }
+    c.setLineDash([]);
+    // The part the sled will ride, drawn solid and glowing.
+    for (const p of pieces(lvl.x0, lvl.flag[0], .05)) K.glowLine(c, p, CYAN, 4, 16);
+    c.restore();
+  }
+  function starPath(c, x, y, r) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * .45 : r; c.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q); }
+    c.closePath();
+  }
+  function drawStar(c, x, y, r, on = true) {
+    c.save();
+    starPath(c, x, y, r);
+    if (on) {
+      c.shadowColor = GOLD; c.shadowBlur = r * 1.3;
+      const g = c.createRadialGradient(x - r * .3, y - r * .4, r * .1, x, y, r);
+      g.addColorStop(0, '#fff6c8'); g.addColorStop(.5, GOLD); g.addColorStop(1, '#d98a00');
+      c.fillStyle = g;
+    } else c.fillStyle = 'rgba(255,255,255,.14)';
+    c.fill(); c.restore();
+  }
+  function drawSled(c) {
+    const h = 1e-3, sl = (val(ride.x + h) - val(ride.x - h)) / (2 * h), a = -Math.atan(isFinite(sl) ? sl : 0);
+    c.save(); c.translate(sx(ride.x), sy(ride.y)); c.rotate(a);
+    c.shadowColor = RED; c.shadowBlur = 14;
+    const g = c.createLinearGradient(0, -10, 0, -2); g.addColorStop(0, '#ff8aa0'); g.addColorStop(1, '#d92b4a');
+    c.fillStyle = g; K.rr(c, -16, -10, 32, 8, 3); c.fill();
+    c.shadowBlur = 0;
+    c.strokeStyle = '#e6eaf8'; c.lineWidth = 2.5; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-17, -1); c.lineTo(14, -1); c.quadraticCurveTo(20, -1, 19, -8); c.stroke();
+    const b = c.createLinearGradient(0, -23, 0, -10); b.addColorStop(0, '#8fe4ff'); b.addColorStop(1, '#2a8fd6');
+    c.fillStyle = b; K.rr(c, -6, -23, 12, 14, 4); c.fill();
+    K.orb(c, 0, -28, 6, '#ffd7a8', { glow: 0 });
+    c.fillStyle = GOLD; K.rr(c, -6.5, -36, 13, 5, 2.5); c.fill();
+    c.restore();
+  }
+  function wrap(c, s, maxW) {
+    for (const size of [15, 13.5, 12]) {
+      c.font = K.font(size, 600);
+      const lines = []; let line = '';
+      for (const w of s.split(' ')) { const t = line ? line + ' ' + w : w; if (c.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+      lines.push(line);
+      if (lines.length <= 2 || size === 12) return { lines: lines.slice(0, 3), size };
     }
   }
-  function star(x, y, r, fill) {
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-    ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = '#c79100'; ctx.lineWidth = 2; ctx.stroke();
-  }
-  function draw() {
-    ctx.save();
-    if (shake > 0) ctx.translate((Math.random() - .5) * 18 * shake, (Math.random() - .5) * 18 * shake);
-    drawGrid();
+
+  function draw(c, t) {
+    drawGrid(c);
     // blocks
     for (const [x1, y1, x2, y2] of (lvl.blocks || [])) {
       const X = sx(x1), Y = sy(y2), w = (x2 - x1) * U, h = (y2 - y1) * U;
-      ctx.fillStyle = '#e8505b'; ctx.fillRect(X, Y, w, h);
-      ctx.save(); ctx.beginPath(); ctx.rect(X, Y, w, h); ctx.clip(); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 6;
-      for (let k = -h; k < w; k += 18) { ctx.beginPath(); ctx.moveTo(X + k, Y + h); ctx.lineTo(X + k + h, Y); ctx.stroke(); } ctx.restore();
-      ctx.strokeStyle = '#a3222d'; ctx.lineWidth = 2; ctx.strokeRect(X, Y, w, h);
+      K.tile(c, X, Y, w, h, RED, { r: 6, depth: 3, glow: 14 });
+      c.save(); K.rr(c, X, Y, w, h, 6); c.clip(); c.strokeStyle = 'rgba(255,255,255,.16)'; c.lineWidth = 6;
+      for (let k = -h; k < w; k += 18) { c.beginPath(); c.moveTo(X + k, Y + h); c.lineTo(X + k + h, Y); c.stroke(); }
+      c.restore();
     }
     // start line
-    ctx.strokeStyle = 'rgba(62,207,142,.8)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx(lvl.x0), 0); ctx.lineTo(sx(lvl.x0), H); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#1f8a5c'; ctx.font = '800 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('START', sx(lvl.x0) + 5, 6);
-    curve(!ride);
-    if (ride) curve(false);
+    c.save(); c.setLineDash([6, 6]); c.strokeStyle = 'rgba(62,230,160,.7)'; c.shadowColor = GREEN; c.shadowBlur = 8; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(sx(lvl.x0), GY); c.lineTo(sx(lvl.x0), GY + GH); c.stroke(); c.restore();
+    K.text('START', sx(lvl.x0) + 6, GY + 12, 11, GREEN, { weight: 800, align: 'left', glow: 8 });
+    drawCurve(c);
     // stars
-    lvl.stars.forEach((s, i) => { if (!got.includes(i)) star(sx(s[0]), sy(s[1]), 14 + Math.sin(time * 4 + i) * 1.5, '#ffcc33'); });
-    // flag
-    const fx = sx(lvl.flag[0]), fy = sy(lvl.flag[1]);
-    const d = fy < 48 ? 1 : -1; // near the top, the flag hangs below its point
-    ctx.strokeStyle = '#2b2d3a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx, fy - 12 * d); ctx.lineTo(fx, fy + 34 * d); ctx.stroke();
-    ctx.fillStyle = '#3ecf8e'; ctx.beginPath(); ctx.moveTo(fx, fy + 34 * d); ctx.lineTo(fx + 24 + Math.sin(time * 6) * 2, fy + 26 * d); ctx.lineTo(fx, fy + 18 * d); ctx.fill();
-    ctx.fillStyle = '#2b2d3a'; ctx.beginPath(); ctx.arc(fx, fy, 5, 0, 7); ctx.fill();
+    lvl.stars.forEach((s, i) => { if (!got.includes(i)) drawStar(c, sx(s[0]), sy(s[1]), 14 + Math.sin(t * 4 + i) * 1.5); });
+    // flag (near the top, it hangs below its point)
+    const fx = sx(lvl.flag[0]), fy = sy(lvl.flag[1]), d = fy < GY + 48 ? 1 : -1;
+    c.strokeStyle = 'rgba(230,236,255,.85)'; c.lineWidth = 3; c.beginPath(); c.moveTo(fx, fy - 10 * d); c.lineTo(fx, fy + 34 * d); c.stroke();
+    c.save(); c.shadowColor = GREEN; c.shadowBlur = 14; c.fillStyle = GREEN;
+    c.beginPath(); c.moveTo(fx, fy + 34 * d); c.lineTo(fx + 24 + Math.sin(t * 6) * 2, fy + 26 * d); c.lineTo(fx, fy + 18 * d); c.fill(); c.restore();
+    K.orb(c, fx, fy, 6, GREEN, { glow: 12 });
     // sled
     if (ride && !ride.crashed) {
-      ctx.fillStyle = 'rgba(255,204,51,.5)';
-      ride.trail.forEach(([x, y], i) => { ctx.globalAlpha = i / ride.trail.length * .6; ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, 7); ctx.fill(); });
-      ctx.globalAlpha = 1;
-      const h = 1e-3, sl = (val(ride.x + h) - val(ride.x - h)) / (2 * h), a = -Math.atan(isFinite(sl) ? sl : 0);
-      ctx.save(); ctx.translate(sx(ride.x), sy(ride.y)); ctx.rotate(a);
-      ctx.fillStyle = '#e8505b'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-16, -9, 32, 7, 3) : ctx.rect(-16, -9, 32, 7); ctx.fill();
-      ctx.strokeStyle = '#2b2d3a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(-17, -1); ctx.lineTo(14, -1); ctx.quadraticCurveTo(20, -1, 19, -7); ctx.stroke();
-      ctx.fillStyle = '#2f6fd6'; ctx.fillRect(-6, -22, 12, 13);
-      ctx.fillStyle = '#ffd7a8'; ctx.beginPath(); ctx.arc(0, -27, 6, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ffcc33'; ctx.fillRect(-6, -34, 12, 5);
-      ctx.restore();
+      c.save(); c.shadowColor = GOLD; c.shadowBlur = 10;
+      ride.trail.forEach(([x, y], i) => { c.globalAlpha = i / ride.trail.length * .7; c.fillStyle = GOLD; c.beginPath(); c.arc(x, y, 2 + i / ride.trail.length * 2.5, 0, 7); c.fill(); });
+      c.restore();
+      drawSled(c);
     }
-    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.fillRect(sx(p.x) - 3, sy(p.y) - 3, 6, 6); }
-    ctx.globalAlpha = 1;
-    // star counter
-    ctx.fillStyle = 'rgba(43,45,58,.85)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(W - 112, 8, 104, 34, 10) : ctx.rect(W - 112, 8, 104, 34); ctx.fill();
-    for (let i = 0; i < 3; i++) star(W - 92 + i * 32, 25, 10, i < got.length ? '#ffcc33' : '#55586b');
-    ctx.restore();
+
+    // top HUD
+    K.chip(10, 9, `Level ${li + 1} / ${LEVELS.length}`, lvl.name, '#fff', { w: 172, h: 48, size: 17 });
+    rideBtn.disabled = !!(ride && !ride.done);
+    K.button(rideBtn);
+    K.panel(c, 708, 9, 82, 48, { r: 12 });
+    K.text('STARS', 749, 22, 10, 'rgba(210,218,245,.65)', { weight: 700 });
+    for (let i = 0; i < 3; i++) drawStar(c, 727 + i * 22, 41, 8.5, i < got.length);
+    // bottom bar: messages and hints
+    K.panel(c, 10, 551, 544, 40, { r: 12, stroke: msgErr ? 'rgba(255,93,115,.55)' : undefined });
+    const m = wrap(c, msg, 516);
+    const lh = m.size + 3, top = 571 - (m.lines.length - 1) * lh / 2;
+    m.lines.forEach((l, i) => K.text(l, 24, top + i * lh, m.size, msgErr ? '#ff9aa8' : '#c9d0ea', { weight: 600, align: 'left' }));
+    K.button(hintBtn); K.button(levelsBtn);
   }
 
-  function frame(t) {
-    const dt = Math.min(.04, (t - last) / 1000 || 0); last = t; time += dt;
-    step(dt);
-    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 12 * dt; p.life -= dt; }
-    parts = parts.filter(p => p.life > 0); shake = Math.max(0, shake - dt);
-    draw(); requestAnimationFrame(frame);
-  }
-
-  // ---------- Menus
+  // ---------- menus
+  const esc = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   function menu() {
-    const n = unlocked();
-    $('ov').innerHTML = `<h1>Function Rider</h1>
-      <p>Type an equation and press <b>Ride!</b> Your sled rides the graph from the start line to the flag. Grab all 3 stars and don't hit the red blocks.</p>
-      <div class="levels">${LEVELS.map((L, i) => `<button data-i="${i}" ${i + 1 > n ? 'disabled' : ''}>${i + 1}<small>${save.stars[i + 1] !== undefined ? '★'.repeat(save.stars[i + 1]) : ''}</small></button>`).join('')}</div>
-      <div class="row"><button class="go" id="cont">${n > 1 ? 'Continue: level ' + n : 'Start'}</button></div>`;
-    $('ov').hidden = false;
-    $('ov').querySelectorAll('.levels button').forEach(b => b.onclick = () => load(+b.dataset.i));
-    $('cont').onclick = () => load(n - 1);
+    K.state = 'menu'; inp.blur();
+    const n = unlocked(), stars = LEVELS.map((L, i) => save.stars[i + 1] || 0), total = stars.reduce((a, b) => a + b, 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Function Rider',
+      sub: 'Type an equation and ride its graph to the flag.',
+      how: HOW,
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: n - 1, stars, on: load },
+      buttons: [{ label: n > 1 ? 'Continue: level ' + n : 'Start', on: () => load(n - 1) }],
+    });
   }
   function showWin(n) {
-    const lastLevel = li === LEVELS.length - 1;
-    $('ov').innerHTML = `<h1>${lastLevel ? 'You finished every level!' : 'Level ' + (li + 1) + ' complete!'}</h1>
-      <div class="big">${'★'.repeat(n)}${'☆'.repeat(3 - n)}</div>
-      <p>Your equation: <b>y = ${$('eq').value.replace(/</g, '&lt;')}</b></p>
-      ${n < 3 ? '<p>Can you find an equation that grabs all 3 stars?</p>' : ''}
-      <div class="row">${n < 3 ? '<button class="ghost" id="again">Try for 3 stars</button>' : ''}<button class="go" id="next">${lastLevel ? 'All levels' : 'Next level'}</button></div>`;
-    $('ov').hidden = false;
-    $('next').onclick = () => lastLevel ? menu() : load(li + 1);
-    if ($('again')) $('again').onclick = () => { $('ov').hidden = true; ride = null; got = []; $('eq').focus(); };
+    const lastLevel = li === LEVELS.length - 1, b = [];
+    if (!lastLevel) b.push({ label: 'Next level', on: () => load(li + 1) });
+    if (n < 3) b.push({ label: 'Try for 3 stars', ghost: !lastLevel, on: () => load(li) });
+    b.push({ label: lastLevel ? 'All levels' : 'Levels', ghost: true, on: menu });
+    K.overlay({
+      kicker: `Level ${li + 1}`, title: lastLevel ? 'You did them all!' : 'Level complete!',
+      sub: `Your equation: <b>y = ${esc(inp.value.trim())}</b>${n < 3 ? '<br>Can you find one that grabs all 3 stars?' : ''}`,
+      html: `<div style="font-size:2.4em;letter-spacing:.15em;color:${GOLD};text-shadow:0 0 .4em rgba(255,204,51,.6)">${'★'.repeat(n)}<span style="opacity:.2">${'★'.repeat(3 - n)}</span></div>`,
+      buttons: b,
+    });
   }
 
-  load(Math.min(unlocked() - 1, LEVELS.length - 1)); menu();
-  requestAnimationFrame(frame);
+  load(Math.min(unlocked() - 1, LEVELS.length - 1)); K.state = 'menu';
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
   // For automated testing.
-  window.__fr = { parse, LEVELS, load, go, get ride() { return ride; }, get got() { return got; }, setEq: s => { $('eq').value = s; compile(); }, sim: () => { let k = 0; while (ride && !ride.done && k++ < 20000) step(1 / 60); return { done: ride && ride.done, crashed: ride && !!ride.crashed, got: got.length, msg: $('msg').textContent }; } };
+  window.__fr = { parse, LEVELS, load, go, get ride() { return ride; }, get got() { return got; }, get msg() { return msg; }, setEq: s => { inp.value = s; compile(); }, sim: () => { let k = 0; while (ride && !ride.done && k++ < 20000) step(1 / 60); return { done: ride && ride.done, crashed: ride && !!ride.crashed, got: got.length, msg }; } };
 })();
 </script>
 </body>

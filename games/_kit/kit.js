@@ -224,7 +224,14 @@
       }
       if (ring) rings.push({ x, y, r: 4, life: 0.45, max: 0.45, color });
     };
-    K.float = function (x, y, text, color = '#fff', size = 26) { floats.push({ x, y, text, color, size, life: 1, max: 1 }); };
+    K.float = function (x, y, text, color = '#fff', size = 26) {
+      // Keep the text fully on screen and below the HUD row, even when it pops at an edge.
+      ctx.font = K.font(size, 800);
+      const half = ctx.measureText(text).width / 2 + 10;
+      x = U.clamp(x, half, Math.max(half, W - half));
+      y = U.clamp(y, 100 + size / 2, H - size);
+      floats.push({ x, y, text, color, size, life: 1, max: 1 });
+    };
     K.shake = function (a = 8) { shakeAmt = Math.max(shakeAmt, a); };
     K.flash = function (color = '#fff', t = 0.25) { flashCol = color; flashT = t; };
     function updateFx(dt) {

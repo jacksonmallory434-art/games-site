@@ -2,167 +2,190 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Answer Rush</title>
-<style>
-  html, body { margin: 0; height: 100%; background: #12131a; overflow: hidden; touch-action: none; }
-  body { display: flex; align-items: center; justify-content: center; }
-  canvas { display: block; cursor: crosshair; }
-</style>
+<script src="../_kit/kit.js"></script>
 </head>
 <body>
-<canvas id="c"></canvas>
 <script>
-// Answer Rush — a MathAdvice original.
-const W = 640, H = 480, HUD = 96;
-const c = document.getElementById('c'), ctx = c.getContext('2d');
-let scale = 1;
-function fit() {
-  scale = Math.min(innerWidth / W, innerHeight / H); const d = devicePixelRatio || 1;
-  c.style.width = W * scale + 'px'; c.style.height = H * scale + 'px';
-  c.width = W * scale * d; c.height = H * scale * d;
-  ctx.setTransform(scale * d, 0, 0, scale * d, 0, 0);
-}
-addEventListener('resize', fit); fit();
+(() => {
+  const W = 640, H = 480, TOP = 104, R = 38, ROUND = 45, PENALTY = 3;
+  const HUES = ['#4fd1ff', '#a66bff', '#ff6bd6', '#6b8cff', '#ffd34d', '#ff9f43'];
+  const GOOD = '#7ee36b', BAD = '#ff5d73';
+  let bubbles, score, right, wrong, streak, bestStreak, timeLeft, problem, spawnIn, reveal, lastSec, ended;
 
-const KEY = 'ma-answerrush-best';
-const getBest = () => { try { return +localStorage.getItem(KEY) || 0; } catch (e) { return 0; } };
-const setBest = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
-const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-
-const ROUND = 45;
-let state = 'ready', bubbles = [], pops = [], score = 0, right = 0, wrong = 0, timeLeft = ROUND,
-    best = getBest(), overAt = 0, problem = null, spawnIn = 0, flash = 0;
-
-function newProblem() {
-  const lvl = Math.min(3, Math.floor(right / 5));
-  const ops = ['+', '−', '×', '÷'].slice(0, 2 + Math.min(2, lvl));
-  const op = ops[rnd(0, ops.length - 1)];
-  let a, b, ans;
-  if (op === '+') { a = rnd(2, 10 + lvl * 10); b = rnd(2, 10 + lvl * 10); ans = a + b; }
-  if (op === '−') { a = rnd(5, 15 + lvl * 10); b = rnd(1, a - 1); ans = a - b; }
-  if (op === '×') { a = rnd(2, 6 + lvl * 2); b = rnd(2, 10); ans = a * b; }
-  if (op === '÷') { b = rnd(2, 9); ans = rnd(2, 10); a = b * ans; }
-  problem = { text: `${a} ${op} ${b} = ?`, ans };
-  // Clear the board and fill it with a mix of right and wrong answers.
-  bubbles = [];
-  for (let i = 0; i < 5; i++) spawn(i < 2);
-}
-function wrongAnswer(ans) {
-  let v;
-  do { v = ans + rnd(-Math.max(3, Math.ceil(ans * 0.25)), Math.max(3, Math.ceil(ans * 0.25))); } while (v === ans || v < 0);
-  return v;
-}
-function spawn(correct) {
-  const r = 34;
-  let x, y, tries = 0;
-  do {
-    x = r + 10 + Math.random() * (W - 2 * r - 20);
-    y = HUD + r + 10 + Math.random() * (H - HUD - 2 * r - 20);
-    tries++;
-  } while (tries < 30 && bubbles.some(b => Math.hypot(b.x - x, b.y - y) < r * 2.3));
-  const life = Math.max(2.2, 4 - right * 0.06);
-  bubbles.push({ x, y, r, value: correct ? problem.ans : wrongAnswer(problem.ans), correct, age: 0, life });
-}
-
-function start() {
-  state = 'play'; score = 0; right = 0; wrong = 0; timeLeft = ROUND; pops = []; spawnIn = 0.8;
-  newProblem();
-}
-
-c.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  const rect = c.getBoundingClientRect();
-  const x = (e.clientX - rect.left) / scale, y = (e.clientY - rect.top) / scale;
-  if (state !== 'play') { if (state === 'ready' || performance.now() - overAt > 600) start(); return; }
-  for (let i = bubbles.length - 1; i >= 0; i--) {
-    const b = bubbles[i];
-    if (Math.hypot(x - b.x, y - b.y) <= b.r) {
-      if (b.correct) {
-        right++; score += 10 + Math.max(0, Math.round((b.life - b.age) * 2));
-        pops.push({ x: b.x, y: b.y, text: '✓', age: 0, good: true });
-        newProblem();
-      } else {
-        wrong++; timeLeft = Math.max(0, timeLeft - 3); flash = 0.3;
-        pops.push({ x: b.x, y: b.y, text: '−3s', age: 0 });
-        bubbles.splice(i, 1);
+  // Keep best scores saved before this game moved to the kit.
+  try { const old = localStorage.getItem('ma-answerrush-best'); if (old && localStorage.getItem('ma-answer-rush-best') == null) localStorage.setItem('ma-answer-rush-best', old); } catch (e) {}
+  const K = window.K = MA.game({
+    slug: 'answer-rush', title: 'Answer Rush', w: W, h: H,
+    accent: '#4fd1ff', accent2: '#ff6bd6', bg: ['#0a1433', '#1a0b30'],
+    tagline: 'Pop the bubble with the right answer before the clock runs out.',
+    how: [
+      'Tap or click the bubble that answers the problem at the top.',
+      'Quick answers score more: <b>10 points</b> plus a bonus for a fresh bubble.',
+      'A wrong pop costs <b>3 seconds</b> and shows you the right answer.',
+      'You have 45 seconds. The problems get harder as you go.',
+    ],
+    start, update, draw,
+    down(x, y) {
+      if (K.state !== 'play' || reveal || ended) return;
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        const b = bubbles[i];
+        if (!b.dead && K.dist(x, y, b.x, b.y) <= b.r * 1.08) return tap(b);
       }
+    },
+  });
+
+  function newProblem() {
+    const lvl = Math.min(3, Math.floor(right / 5));
+    const ops = ['+', '−', '×', '÷'].slice(0, 2 + Math.min(2, lvl));
+    const op = K.pick(ops);
+    let a, b, ans;
+    if (op === '+') { a = K.ri(2, 10 + lvl * 10); b = K.ri(2, 10 + lvl * 10); ans = a + b; }
+    if (op === '−') { a = K.ri(5, 15 + lvl * 10); b = K.ri(1, a - 1); ans = a - b; }
+    if (op === '×') { a = K.ri(2, 6 + lvl * 2); b = K.ri(2, 10); ans = a * b; }
+    if (op === '÷') { b = K.ri(2, 9); ans = K.ri(2, 10); a = b * ans; }
+    problem = { text: `${a} ${op} ${b}`, ans, born: 0 };
+    // Clear the board and fill it with a mix of right and wrong answers.
+    bubbles = [];
+    for (let i = 0; i < 5; i++) spawn(i < 2);
+  }
+  function wrongAnswer(ans) {
+    const spread = Math.max(3, Math.ceil(ans * 0.25));
+    let v, tries = 0;
+    // Never equal to the answer, never negative, and avoid repeating a number already on the board.
+    do { v = ans + K.ri(-spread, spread); } while ((v === ans || v < 0 || bubbles.some(b => b.value === v)) && ++tries < 40);
+    return v === ans || v < 0 ? ans + spread + 1 : v;
+  }
+  function spawn(correct) {
+    let x, y, tries = 0;
+    do {
+      x = R + 12 + Math.random() * (W - 2 * R - 24);
+      y = TOP + R + 10 + Math.random() * (H - TOP - 2 * R - 24);
+    } while (++tries < 40 && bubbles.some(b => K.dist(b.x, b.y, x, y) < R * 2.3));
+    const life = Math.max(2.2, 4 - right * 0.06);
+    bubbles.push({ x, y, r: R, value: correct ? problem.ans : wrongAnswer(problem.ans), correct, age: 0, life, color: K.pick(HUES), ph: Math.random() * 7 });
+  }
+
+  function start() {
+    score = 0; right = 0; wrong = 0; streak = 0; bestStreak = 0; timeLeft = ROUND; spawnIn = 0.8; reveal = 0; lastSec = ROUND; ended = false;
+    newProblem();
+  }
+
+  function tap(b) {
+    if (b.correct) {
+      right++; streak++; bestStreak = Math.max(bestStreak, streak);
+      const pts = 10 + Math.max(0, Math.round((b.life - b.age) * 2));
+      score += pts;
+      K.burst(b.x, b.y, b.color, 22, 260, 4.5);
+      K.burst(b.x, b.y, '#fff', 8, 160, 3, false);
+      K.float(b.x, b.y - 10, '+' + pts, GOOD, 30);
+      if (streak > 0 && streak % 5 === 0) K.float(W / 2, TOP + 80, streak + ' in a row!', '#ffd34d', 28);
+      K.sfx.good(); K.sfx.pop();
+      newProblem();
+    } else {
+      wrong++; streak = 0;
+      timeLeft = Math.max(0, timeLeft - PENALTY);
+      b.dead = true;
+      K.burst(b.x, b.y, BAD, 20, 240, 4);
+      K.float(b.x, b.y - 10, '−3s', BAD, 30);
+      K.shake(8); K.flash(BAD, 0.25); K.sfx.bad();
+      // Show the right answer for a moment, then move on to a fresh problem.
+      reveal = 1.1;
+      if (!bubbles.some(q => q.correct)) spawn(true);
+      bubbles.forEach(q => { if (q.correct) q.age = Math.min(q.age, q.life - 1.6); });
+    }
+  }
+
+  function update(dt) {
+    if (ended) return;
+    problem.born = Math.min(1, problem.born + dt * 5);
+    for (const b of bubbles) b.age += dt;
+    if (reveal) {
+      reveal = Math.max(0, reveal - dt);
+      if (!reveal) { if (timeLeft <= 0) return end(); newProblem(); }
       return;
     }
+    timeLeft -= dt;
+    const sec = Math.ceil(timeLeft);
+    if (sec < lastSec) { lastSec = sec; if (sec <= 5 && sec > 0) K.sfx.tick(); }
+    if (timeLeft <= 0) return end();
+    for (const b of bubbles) if (b.age >= b.life && !b.dead) { b.dead = true; K.burst(b.x, b.y, b.color, 6, 90, 2.5, false); }
+    bubbles = bubbles.filter(b => !b.dead);
+    // Always keep at least one right answer on the board.
+    if (!bubbles.some(b => b.correct)) spawn(true);
+    spawnIn -= dt;
+    if (spawnIn <= 0 && bubbles.length < 7) { spawn(Math.random() < 0.3); spawnIn = 0.7; }
   }
-});
-addEventListener('keydown', e => { if ((e.code === 'Space' || e.code === 'Enter') && state !== 'play') { e.preventDefault(); start(); } });
 
-function update(dt) {
-  pops.forEach(p => p.age += dt); pops = pops.filter(p => p.age < 0.7);
-  flash = Math.max(0, flash - dt);
-  if (state !== 'play') return;
-  timeLeft -= dt;
-  if (timeLeft <= 0) {
-    timeLeft = 0; state = 'over'; overAt = performance.now();
-    if (score > best) { best = score; setBest(best); }
-    return;
+  function end() {
+    ended = true; timeLeft = 0;
+    K.sfx.boom(); K.shake(6);
+    const acc = right + wrong ? Math.round(100 * right / (right + wrong)) : 0;
+    K.gameOver(score, {
+      title: "Time's up!", delay: 700,
+      msg: `<b>${right}</b> right, <b>${wrong}</b> wrong (${acc}% accuracy). Best streak: <b>${bestStreak}</b> in a row.`,
+    });
   }
-  bubbles.forEach(b => b.age += dt);
-  bubbles = bubbles.filter(b => b.age < b.life);
-  // Always keep at least one right answer on the board.
-  if (!bubbles.some(b => b.correct)) spawn(true);
-  spawnIn -= dt;
-  if (spawnIn <= 0 && bubbles.length < 7) { spawn(Math.random() < 0.3); spawnIn = 0.7; }
-}
 
-function drawBubble(b) {
-  const fade = Math.min(1, (b.life - b.age) / 0.5);
-  const grow = Math.min(1, b.age / 0.15);
-  ctx.globalAlpha = fade;
-  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#2f6fd6'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.r * grow, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#2b2d3a'; ctx.font = `800 ${b.value >= 100 ? 22 : 26}px system-ui, sans-serif`; ctx.textAlign = 'center';
-  ctx.fillText(b.value, b.x, b.y + 9);
-  ctx.globalAlpha = 1;
-}
-function draw() {
-  ctx.fillStyle = '#f7f5ee'; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#d6e4f0'; ctx.lineWidth = 1;
-  for (let x = 0; x <= W; x += 32) { ctx.beginPath(); ctx.moveTo(x, HUD); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = HUD; y <= H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-  if (flash > 0) { ctx.fillStyle = `rgba(255,107,107,${flash})`; ctx.fillRect(0, HUD, W, H - HUD); }
-  bubbles.forEach(drawBubble);
-  pops.forEach(p => {
-    ctx.globalAlpha = 1 - p.age / 0.7; ctx.fillStyle = p.good ? '#2ea36f' : '#e8505b';
-    ctx.font = '800 28px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y - p.age * 50);
-    ctx.globalAlpha = 1;
-  });
-  // HUD with the current problem
-  ctx.fillStyle = '#1c1e29'; ctx.fillRect(0, 0, W, HUD);
-  ctx.font = '700 18px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#9a9db0';
-  ctx.fillText('Score ' + score, 16, 28);
-  ctx.textAlign = 'right'; ctx.fillStyle = timeLeft < 8 && state === 'play' ? '#ff6b6b' : '#9a9db0';
-  ctx.fillText(Math.ceil(timeLeft) + 's', W - 16, 28);
-  ctx.textAlign = 'center'; ctx.fillStyle = '#ffcc33'; ctx.font = '800 38px system-ui, sans-serif';
-  ctx.fillText(state === 'play' ? problem.text : 'Answer Rush', W / 2, 74);
-
-  if (state !== 'play') {
-    ctx.fillStyle = 'rgba(18,19,26,.75)'; ctx.fillRect(0, HUD, W, H - HUD);
-    ctx.textAlign = 'center';
-    if (state === 'ready') {
-      ctx.fillStyle = '#fff'; ctx.font = '600 21px system-ui, sans-serif';
-      ctx.fillText('Pop the bubble with the right answer.', W / 2, H / 2 + 10);
-      ctx.fillText('Faster answers score more. Wrong ones cost 3 seconds.', W / 2, H / 2 + 42);
-      ctx.fillStyle = '#c8cad6'; ctx.font = '500 17px system-ui, sans-serif';
-      ctx.fillText('Click or tap to start', W / 2, H / 2 + 82);
-    } else {
-      ctx.fillStyle = '#ffcc33'; ctx.font = '800 40px system-ui, sans-serif'; ctx.fillText("Time's up!", W / 2, H / 2 + 4);
-      ctx.fillStyle = '#fff'; ctx.font = '600 20px system-ui, sans-serif';
-      ctx.fillText(`Score ${score}  ·  ${right} right, ${wrong} wrong  ·  Best ${best}`, W / 2, H / 2 + 42);
-      ctx.fillStyle = '#c8cad6'; ctx.font = '500 17px system-ui, sans-serif'; ctx.fillText('Click or tap to play again', W / 2, H / 2 + 76);
-    }
+  function drawBubble(ctx, b, t) {
+    const left = b.life - b.age;
+    const grow = K.back(Math.min(1, b.age / 0.2));
+    const show = reveal && b.correct;
+    let a = Math.min(1, left / 0.5);
+    if (left < 1 && !show) a *= 0.6 + 0.4 * Math.abs(Math.sin(t * 12)); // blink before vanishing
+    if (reveal && !b.correct) a *= 0.3;
+    const y = b.y + Math.sin(t * 2 + b.ph) * 3, r = Math.max(1, b.r * grow * (show ? 1 + 0.06 * Math.sin(t * 10) : 1));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, a);
+    const col = show ? GOOD : b.color;
+    K.orb(ctx, b.x, y, r, col, { glow: show ? 34 : 14 });
+    // glassy rim + shine
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(b.x, y, r - 1, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    ctx.beginPath(); ctx.ellipse(b.x - r * 0.35, y - r * 0.45, r * 0.28, r * 0.14, -0.6, 0, 7); ctx.fill();
+    const s = String(b.value);
+    K.text(s, b.x, y + 1, (s.length >= 3 ? 24 : 28) * grow, '#fff', { weight: 800, stroke: 5, strokeColor: 'rgba(10,12,30,.55)', c: ctx });
+    ctx.restore();
   }
-}
 
-let last = performance.now();
-function loop(t) { const dt = Math.min((t - last) / 1000, 0.05); last = t; update(dt); draw(); requestAnimationFrame(loop); }
-requestAnimationFrame(loop);
+  function draw(ctx, t) {
+    if (!bubbles) return drawAttract(ctx, t);
+    bubbles.forEach(b => drawBubble(ctx, b, t));
+    drawHud(ctx, t);
+  }
+
+  function drawHud(ctx, t) {
+    const low = timeLeft < 8 && K.state === 'play';
+    K.chip(16, 14, 'Score', score, '#ffd34d', { w: 112, h: 60, size: 26 });
+    K.chip(W - 16, 14, 'Time', Math.ceil(Math.max(0, timeLeft)) + 's', low ? BAD : '#4fd1ff', { w: 112, h: 60, size: 26 * (low ? 1 + 0.08 * Math.abs(Math.sin(t * 6)) : 1), align: 'right' });
+    // Problem panel
+    const px = 144, pw = W - 288, rev = reveal > 0;
+    K.panel(ctx, px, 10, pw, 68, { r: 16, glow: 24, glowColor: K.alpha(rev ? BAD : K.accent, 0.4), stroke: K.alpha(rev ? BAD : K.accent, 0.4) });
+    const pop = K.back(problem.born);
+    const txt = rev ? `${problem.text} = ${problem.ans}` : `${problem.text} = ?`;
+    K.text(txt, W / 2, 45, 36 * pop, '#fff', { weight: 800, glow: 14, glowColor: rev ? BAD : K.accent, c: ctx });
+    // Streak dots under the problem
+    if (streak >= 2) K.text('streak ×' + streak, W / 2, 90, 12, '#ffd34d', { weight: 700, glow: 8, c: ctx });
+    // Time bar
+    const f = K.clamp(timeLeft / ROUND, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; K.rr(ctx, 16, TOP - 4, W - 32, 5, 3); ctx.fill();
+    ctx.save(); ctx.shadowColor = low ? BAD : K.accent; ctx.shadowBlur = 10;
+    const g = ctx.createLinearGradient(16, 0, W - 16, 0);
+    g.addColorStop(0, low ? BAD : K.accent); g.addColorStop(1, low ? '#ff9f43' : K.accent2);
+    ctx.fillStyle = g; K.rr(ctx, 16, TOP - 4, (W - 32) * f, 5, 3); ctx.fill(); ctx.restore();
+  }
+
+  // Menu backdrop: drifting bubbles.
+  function drawAttract(ctx, t) {
+    [[110, 200, 12, 0], [250, 330, 56, 1], [420, 220, 7, 2], [540, 360, 81, 3], [330, 160, 24, 4], [160, 400, 9, 5]].forEach(([x, y, v, i]) =>
+      drawBubble(ctx, { x, y, r: R, value: v, age: 1, life: 99, color: HUES[i], ph: i }, t));
+  }
+
+  // Test hook: read-only peek at the game state.
+  K.peek = () => ({ bubbles, problem, score, right, wrong, timeLeft, reveal });
+})();
 </script>
 </body>
 </html>

@@ -76,7 +76,7 @@ const X = v => X0 + (v - cur.lo) / (cur.hi - cur.lo) * (X1 - X0);
 function drawLine(extra = '') {
   let s = `<line x1="${X0 - 12}" y1="${LY}" x2="${X1 + 12}" y2="${LY}" stroke="#2b2d3a" stroke-width="4" stroke-linecap="round"/>`;
   if (cur.ticks) for (let v = cur.lo; v <= cur.hi + 1e-9; v += cur.ticks) s += `<line x1="${X(v)}" y1="${LY - 8}" x2="${X(v)}" y2="${LY + 8}" stroke="#2b2d3a" stroke-width="2"/>`;
-  cur.labels.forEach(v => { s += `<line x1="${X(v)}" y1="${LY - 14}" x2="${X(v)}" y2="${LY + 14}" stroke="#2b2d3a" stroke-width="3"/><text x="${X(v)}" y="${LY + 40}" font-size="20" font-weight="800" fill="#2b2d3a" text-anchor="middle" font-family="system-ui,sans-serif">${String(v).replace('-', '−')}</text>`; });
+  cur.labels.forEach(v => { s += `<line x1="${X(v)}" y1="${LY - 14}" x2="${X(v)}" y2="${LY + 14}" stroke="#2b2d3a" stroke-width="3"/><text x="${X(v)}" y="${LY + 40}" font-size="20" font-weight="800" fill="#2b2d3a" text-anchor="middle" font-family="Lexend,system-ui,sans-serif">${String(v).replace('-', '−')}</text>`; });
   $('line').innerHTML = s + extra;
 }
 function newRound() {

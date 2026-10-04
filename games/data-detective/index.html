@@ -109,7 +109,7 @@ function drawPlot(d) {
   let s = `<line x1="${x0 - 10}" y1="${y}" x2="${x1 + 10}" y2="${y}" stroke="#2b2d3a" stroke-width="3"/>`;
   for (let v = lo; v <= hi; v++) {
     s += `<line x1="${X(v)}" y1="${y - 6}" x2="${X(v)}" y2="${y + 6}" stroke="#2b2d3a" stroke-width="2"/>`;
-    s += `<text x="${X(v)}" y="${y + 26}" fill="#2b2d3a" font-size="16" font-weight="700" font-family="system-ui,sans-serif" text-anchor="middle">${v}</text>`;
+    s += `<text x="${X(v)}" y="${y + 26}" fill="#2b2d3a" font-size="16" font-weight="700" font-family="Lexend,system-ui,sans-serif" text-anchor="middle">${v}</text>`;
   }
   const stack = {};
   d.sorted.forEach(v => {

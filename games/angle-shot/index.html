@@ -2,34 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Angle Shot</title>
+<script src="../_kit/kit.js"></script>
 <style>
-  html, body { margin: 0; height: 100%; background: #10182a; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  canvas { display: block; cursor: crosshair; }
+.ma-lv { grid-template-columns: repeat(7, 1fr); max-width: 24em; gap: .4em; margin-top: .6em; }
+.ma-lv button { aspect-ratio: auto; padding: .4em 0 .15em; }
+.ma-card { padding-top: 1.2em; padding-bottom: 1.1em; }
+.ma-card h1 { font-size: 2.2em; }
+.ma-best { margin: .5em 0 0; }
+@media (max-width: 600px), (max-height: 480px) { .ma-how { display: none; } }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
 <script>
 // Angle Shot — a MathAdvice original.
 // Set the launch angle and power to hit every target. Walls, wind, and moving targets come later.
 (() => {
   const W = 800, H = 450, GROUND = 400, CX = 70, CY = 382, G = 520, BALL = 7;
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-  let scale = 1;
-  function fit() {
-    const dpr = window.devicePixelRatio || 1;
-    scale = Math.min(innerWidth / W, innerHeight / H);
-    cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
-    cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
-    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-  }
-  addEventListener('resize', fit); fit();
-  const KEY = 'ma-angleshot-level';
-  const getLevel = () => { try { return Math.max(1, +localStorage.getItem(KEY) || 1); } catch (e) { return 1; } };
-  const saveLevel = v => { try { localStorage.setItem(KEY, Math.max(v, getLevel())); } catch (e) {} };
+  const GOLD = '#ffcc33', CYAN = '#4fd1ff', RED = '#ff4d6a';
 
   // Levels: targets {x, y, r, bob}, walls [x, y, w, h], wind (px/s² to the right), and a tip.
   const LEVELS = [
@@ -49,43 +40,111 @@
     { t: [{ x: 740, y: GROUND - 18 }, { x: 560, y: 90 }], w: [[200, 140, 30, 260], [470, 0, 30, 120], [470, 220, 30, 180]], wind: 40, tip: 'The final challenge.' },
   ];
 
-  let state = 'title', level = getLevel(), L = null, targets = [], walls = [], wind = 0, angle = 45, power = 60, shots = 0, maxShots = 0;
-  let ball = null, trail = [], lastTrail = [], parts = [], toasts = [], time = 0, last = 0, aiming = false, endTimer = 0, keys = {};
+  let lv = 0, L = LEVELS[0], targets = [], walls = [], wind = 0, angle = 45, power = 60, shots = 0, maxShots = 3;
+  let ball = null, trail = [], lastTrail = [], aiming = false;
+  const HOW = ['Drag anywhere: direction sets the <b>angle</b>, distance the <b>power</b>.', 'Let go to fire. Hit every target; fewer shots earn more stars.', 'Keys: ↑ ↓ angle, ← → power, Space fires.'];
+  const levelsBtn = { x: 712, y: 10, w: 76, h: 44, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'angle-shot', title: 'Angle Shot', accent: GOLD, accent2: RED, bg: ['#0c1638', '#1d0f36'], w: W, h: H,
+    tagline: 'Set the angle and power, then fire. Hit every target before your shots run out.',
+    how: HOW,
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(levelsBtn, x, y)) { aiming = false; return menu(); }
+      if (ball) return;
+      aiming = true; aimAt(x, y);
+    },
+    move(x, y) { if (aiming) aimAt(x, y); },
+    up() { if (aiming) { aiming = false; fire(); } },
+    key(k) { if (K.state === 'play' && (k === ' ' || k === 'Enter')) fire(); },
+  });
+
+  // Progress: stars per level. Older saves only kept the highest level reached.
+  const saved = K.load('stars', []);
+  let oldLevel = 1;
+  try { oldLevel = +localStorage.getItem('ma-angleshot-level') || 1; } catch (e) {}
+  const unlocked = () => Math.min(LEVELS.length - 1, Math.max(saved.filter(Boolean).length, oldLevel - 1));
+
+  function menu() {
+    K.state = 'menu';
+    const n = unlocked(), total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Angle Shot',
+      how: HOW,
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: n, stars: saved, on: startLevel },
+      buttons: [{ label: n > 0 ? `Continue: level ${n + 1}` : 'Play', on: () => startLevel(n) }],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
 
   function startLevel(n) {
-    level = Math.min(n, LEVELS.length); L = LEVELS[level - 1];
+    lv = n; L = LEVELS[n];
     targets = L.t.map(t => ({ ...t, r: t.r || 18, hit: false, by: t.y }));
     walls = (L.w || []).map(w => ({ x: w[0], y: w[1], w: w[2], h: w[3] }));
-    wind = L.wind || 0; shots = 0; maxShots = targets.length + 2; ball = null; trail = []; lastTrail = []; parts = []; toasts = [];
-    endTimer = 0; state = 'play';
+    wind = L.wind || 0; shots = 0; maxShots = targets.length + 2; ball = null; trail = []; lastTrail = []; aiming = false;
+    K.state = 'play';
   }
   const speed = () => 230 + power * 6.2;
+  function aimAt(x, y) {
+    const dx = x - CX, dy = CY - y;
+    angle = K.clamp(Math.atan2(Math.max(dy, 0.01), Math.max(dx, 0.01)) * 180 / Math.PI, 1, 89);
+    power = K.clamp(Math.hypot(dx, dy) / 5.2, 5, 100);
+  }
   function fire() {
-    if (state !== 'play' || ball || shots >= maxShots) return;
+    if (K.state !== 'play' || ball || shots >= maxShots) return;
     const a = angle * Math.PI / 180, v = speed();
     ball = { x: CX + Math.cos(a) * 48, y: CY - Math.sin(a) * 48, vx: Math.cos(a) * v, vy: -Math.sin(a) * v, ang: angle };
-    shots++; trail = []; burst(ball.x, ball.y, '#ffd27a', 12);
+    shots++; trail = [];
+    K.burst(ball.x, ball.y, '#ffd27a', 14, 180, 3, false);
+    K.sfx.whoosh(); K.sfx.pop(); K.shake(3);
   }
-  function burst(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = 50 + Math.random() * 180; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: .7, c }); } }
-  function toast(t, x, y, c) { toasts.push({ t, x, y, c, age: 0 }); }
 
-  function endShot() {
+  function endShot(x, y) {
     lastTrail = trail; ball = null;
-    if (targets.every(t => t.hit)) { state = 'won'; saveLevel(level + 1); }
-    else if (shots >= maxShots) state = 'lost';
+    if (!targets.every(t => t.hit)) trail = [];
+    if (targets.every(t => t.hit)) return win();
+    if (shots >= maxShots) return lose();
+    const left = maxShots - shots;
+    K.float(K.clamp(x, 60, W - 60), K.clamp(y - 24, 90, GROUND - 20), `Miss · ${left} left`, '#ff8aa0', 18);
   }
-  function hitsWall(x, y) { return walls.some(w => x > w.x - BALL && x < w.x + w.w + BALL && y > w.y - BALL && y < w.y + w.h + BALL); }
+  function win() {
+    ball = null; K.state = 'over';
+    const st = shots <= targets.length ? 3 : shots === targets.length + 1 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    K.sfx.win();
+    const last = lv === LEVELS.length - 1;
+    setTimeout(() => {
+      const b = [];
+      if (!last) b.push({ label: 'Next level', on: () => startLevel(lv + 1) });
+      b.push({ label: 'Replay', ghost: !last, on: () => startLevel(lv) }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({
+        kicker: `Level ${lv + 1}`, title: last ? 'You beat them all!' : 'Level cleared!',
+        sub: `${shots} shot${shots > 1 ? 's' : ''} for ${targets.length} target${targets.length > 1 ? 's' : ''}.`,
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:${GOLD};text-shadow:0 0 .4em rgba(255,204,51,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`,
+        buttons: b,
+      });
+    }, 900);
+  }
+  function lose() {
+    K.state = 'over';
+    setTimeout(() => {
+      K.sfx.lose();
+      K.overlay({ kicker: `Level ${lv + 1}`, title: 'Out of shots', sub: 'Tip: ' + L.tip, buttons: [{ label: 'Try again', on: () => startLevel(lv) }, { label: 'Levels', ghost: true, on: menu }] });
+    }, 700);
+  }
+  const hitsWall = (x, y) => walls.some(w => x > w.x - BALL && x < w.x + w.w + BALL && y > w.y - BALL && y < w.y + w.h + BALL);
+  const bobY = t => t.bob ? t.by + Math.sin(K.t * 1.6) * t.bob : t.by;
 
   function update(dt) {
-    time += dt;
-    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; } parts = parts.filter(p => p.life > 0);
-    for (const t of toasts) t.age += dt; toasts = toasts.filter(t => t.age < 1.6);
-    for (const t of targets) if (t.bob) t.y = t.by + Math.sin(time * 1.6) * t.bob;
-    if (state !== 'play') return;
-    const ka = (keys.ArrowUp || keys.KeyW ? 1 : 0) - (keys.ArrowDown || keys.KeyS ? 1 : 0);
-    const kp = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
-    if (ka) angle = Math.max(1, Math.min(89, angle + ka * 30 * dt));
-    if (kp) power = Math.max(5, Math.min(100, power + kp * 40 * dt));
+    for (const t of targets) t.y = bobY(t);
+    const ka = (K.keys.ArrowUp || K.keys.w || K.keys.W ? 1 : 0) - (K.keys.ArrowDown || K.keys.s || K.keys.S ? 1 : 0);
+    const kp = (K.keys.ArrowRight || K.keys.d || K.keys.D ? 1 : 0) - (K.keys.ArrowLeft || K.keys.a || K.keys.A ? 1 : 0);
+    if (ka) angle = K.clamp(angle + ka * 30 * dt, 1, 89);
+    if (kp) power = K.clamp(power + kp * 40 * dt, 5, 100);
     if (!ball) return;
     // Small steps so fast shots don't skip through walls.
     const steps = 6;
@@ -93,152 +152,155 @@
       const h = dt / steps;
       ball.vx += wind * h; ball.vy += G * h; ball.x += ball.vx * h; ball.y += ball.vy * h;
       for (const t of targets) if (!t.hit && Math.hypot(ball.x - t.x, ball.y - t.y) < t.r + BALL) {
-        t.hit = true; burst(t.x, t.y, '#ffcc33', 26); burst(t.x, t.y, '#ff5d73', 14); toast(`Hit at ${Math.round(ball.ang)}°!`, t.x, t.y - 34, '#ffcc33');
+        t.hit = true;
+        K.burst(t.x, t.y, GOLD, 26, 280, 5); K.burst(t.x, t.y, RED, 14, 200, 4, false);
+        K.float(t.x, t.y - 34, `Hit at ${Math.round(ball.ang)}°!`, GOLD, 22); K.sfx.coin(); K.shake(5);
       }
-      if (hitsWall(ball.x, ball.y)) { burst(ball.x, ball.y, '#c9b28a', 10); endShot(); break; }
-      if (ball.y > GROUND - BALL) { burst(ball.x, GROUND - 4, '#7a5a3a', 10); endShot(); break; }
-      if (ball.x > W + 40 || ball.x < -40) { endShot(); break; }
+      if (hitsWall(ball.x, ball.y)) { K.burst(ball.x, ball.y, '#b9a7ff', 10, 160, 3, false); K.sfx.note(170, 0.12); return endShot(ball.x, ball.y); }
+      if (ball.y > GROUND - BALL) { K.burst(ball.x, GROUND - 4, '#5ee0a0', 10, 150, 3, false); K.sfx.note(140, 0.12); return endShot(ball.x, GROUND); }
+      if (ball.x > W + 40 || ball.x < -40) return endShot(ball.x, ball.y);
+      if (targets.every(t => t.hit)) { lastTrail = trail; return win(); }
     }
-    if (ball && (trail.length === 0 || Math.hypot(ball.x - trail[trail.length - 1][0], ball.y - trail[trail.length - 1][1]) > 9)) trail.push([ball.x, ball.y]);
-    if (ball && targets.every(t => t.hit)) { lastTrail = trail; ball = null; state = 'won'; saveLevel(level + 1); }
+    const lt = trail[trail.length - 1];
+    if (!lt || Math.hypot(ball.x - lt[0], ball.y - lt[1]) > 6) trail.push([ball.x, ball.y]);
   }
 
-  // ---- Input
-  const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]; };
-  function aimAt(x, y) {
-    const dx = x - CX, dy = CY - y;
-    angle = Math.max(1, Math.min(89, Math.atan2(Math.max(dy, 0.01), Math.max(dx, 0.01)) * 180 / Math.PI));
-    power = Math.max(5, Math.min(100, Math.hypot(dx, dy) / 5.2));
+  // ---------- drawing ----------
+  function drawScene(c, t) {
+    // twinkling stars
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 173) % W, y = (i * 61) % 300;
+      c.fillStyle = `rgba(255,255,255,${0.15 + 0.4 * Math.abs(Math.sin(t * 0.8 + i))})`; c.fillRect(x, y, 1.5, 1.5);
+    }
+    // hills, two layers
+    [[0.16, 70, 110, '#2a2160', 0], [0.3, 40, 80, '#1b2c52', 2]].forEach(([a, base, amp, col, ph]) => {
+      c.beginPath(); c.moveTo(0, GROUND);
+      for (let x = 0; x <= W; x += 16) c.lineTo(x, GROUND - base - Math.sin(x / 120 + ph) * amp * 0.3 - Math.sin(x / 47 + ph) * 8);
+      c.lineTo(W, GROUND); c.closePath();
+      const g = c.createLinearGradient(0, GROUND - base - amp, 0, GROUND);
+      g.addColorStop(0, col); g.addColorStop(1, 'rgba(10,14,30,.9)');
+      c.fillStyle = g; c.globalAlpha = 0.9; c.fill(); c.globalAlpha = 1;
+    });
+    // ground
+    const g = c.createLinearGradient(0, GROUND, 0, H);
+    g.addColorStop(0, '#16403f'); g.addColorStop(1, '#081620');
+    c.fillStyle = g; c.fillRect(0, GROUND, W, H - GROUND);
+    K.glowLine(c, [[0, GROUND], [W, GROUND]], '#5ee0a0', 2, 12);
+    // wind flag
+    const fx = 24, dir = Math.sign(wind);
+    c.strokeStyle = 'rgba(230,236,255,.75)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(fx, GROUND); c.lineTo(fx, GROUND - 62); c.stroke();
+    c.save(); c.translate(fx, GROUND - 60);
+    const flap = Math.sin(t * (wind ? 9 : 2)) * (wind ? 3 : 1), len = wind ? (Math.abs(wind) >= 80 ? 30 : 22) : 6;
+    c.fillStyle = wind ? CYAN : 'rgba(79,209,255,.5)'; c.shadowColor = CYAN; c.shadowBlur = wind ? 10 : 0;
+    c.beginPath(); c.moveTo(0, 0);
+    if (wind) { c.lineTo(dir * len, 5 + flap); c.lineTo(0, 13); } else { c.lineTo(len, 18 + flap); c.lineTo(0, 22); }
+    c.fill(); c.restore();
   }
-  cv.addEventListener('pointerdown', e => {
-    e.preventDefault(); const [x, y] = pt(e);
-    if (state === 'title') { if (level > 1 && y > 330 && y < 370) startLevel(1); else startLevel(level); return; }
-    if (state === 'won') { if (level >= LEVELS.length) state = 'title', level = 1; else startLevel(level + 1); return; }
-    if (state === 'lost') { startLevel(level); return; }
-    if (ball) return;
-    aiming = true; aimAt(x, y);
-  });
-  cv.addEventListener('pointermove', e => { if (aiming) aimAt(...pt(e)); });
-  addEventListener('pointerup', () => { if (aiming) { aiming = false; fire(); } });
-  addEventListener('keydown', e => {
-    keys[e.code] = true;
-    if (e.code === 'Space' || e.code === 'Enter') {
-      e.preventDefault();
-      if (state === 'play') fire();
-      else if (state === 'title') startLevel(level);
-      else if (state === 'won') { if (level < LEVELS.length) startLevel(level + 1); }
-      else startLevel(level);
+  function drawWall(c, w) {
+    K.tile(c, w.x, w.y, w.w, w.h, '#6c5ce7', { r: 6, depth: 4 });
+    c.save(); K.rr(c, w.x, w.y, w.w, w.h, 6); c.clip();
+    c.strokeStyle = 'rgba(255,255,255,.1)'; c.lineWidth = 1;
+    for (let y = w.y + 14; y < w.y + w.h; y += 14) {
+      c.beginPath(); c.moveTo(w.x, y); c.lineTo(w.x + w.w, y); c.stroke();
+      for (let x = w.x + (((y - w.y) / 14) % 2 ? 9 : 18); x < w.x + w.w; x += 18) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 14); c.stroke(); }
     }
-  });
-  addEventListener('keyup', e => keys[e.code] = false);
-
-  // ---- Drawing
-  function text(t, x, y, size, color, weight = 800, align = 'center') { ctx.font = `${weight} ${size}px system-ui, sans-serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y); }
-  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-  function wrapText(t, x, y, size, color, maxW) {
-    ctx.font = `600 ${size}px system-ui, sans-serif`; const words = t.split(' '); let line = ''; const lines = [];
-    for (const w of words) { const s = line ? line + ' ' + w : w; if (ctx.measureText(s).width > maxW && line) { lines.push(line); line = w; } else line = s; }
-    lines.push(line); lines.forEach((l, i) => text(l, x, y + i * (size + 6), size, color, 600));
+    c.restore();
+    c.strokeStyle = 'rgba(185,167,255,.5)'; c.lineWidth = 1; K.rr(c, w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1, 6); c.stroke();
   }
-  function draw() {
-    const sky = ctx.createLinearGradient(0, 0, 0, GROUND); sky.addColorStop(0, '#7ec4f5'); sky.addColorStop(1, '#d9f0ff');
-    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-    // hills and clouds
-    ctx.fillStyle = '#a9dcb0'; ctx.beginPath(); ctx.moveTo(0, GROUND); for (let x = 0; x <= W; x += 20) ctx.lineTo(x, GROUND - 60 - Math.sin(x / 110) * 30 - Math.sin(x / 43) * 8); ctx.lineTo(W, GROUND); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    for (const [cx, cy, s] of [[180, 70, 1], [470, 50, .8], [690, 95, 1.1]]) { const x = (cx + time * 8 * s) % (W + 120) - 60; ctx.beginPath(); ctx.arc(x, cy, 22 * s, 0, 7); ctx.arc(x + 24 * s, cy - 10 * s, 26 * s, 0, 7); ctx.arc(x + 52 * s, cy, 20 * s, 0, 7); ctx.fill(); }
-    ctx.fillStyle = '#5aa05a'; ctx.fillRect(0, GROUND, W, H - GROUND); ctx.fillStyle = '#4b8a4b'; ctx.fillRect(0, GROUND, W, 6);
-
-    // walls
-    for (const w of walls) {
-      ctx.fillStyle = '#9b6b4a'; ctx.fillRect(w.x, w.y, w.w, w.h);
-      ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1;
-      for (let y = w.y; y < w.y + w.h; y += 14) { ctx.beginPath(); ctx.moveTo(w.x, y); ctx.lineTo(w.x + w.w, y); ctx.stroke(); for (let x = w.x + ((y - w.y) / 14 % 2 ? 9 : 0); x < w.x + w.w; x += 18) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, Math.min(y + 14, w.y + w.h)); ctx.stroke(); } }
-      ctx.strokeStyle = '#6e4a32'; ctx.lineWidth = 2; ctx.strokeRect(w.x, w.y, w.w, w.h);
-    }
-    // targets
-    for (const t of targets) {
-      if (t.hit) continue;
-      if (t.bob) { ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(t.x, t.by - t.bob); ctx.lineTo(t.x, t.by + t.bob); ctx.stroke(); ctx.setLineDash([]); }
-      [['#e8505b', 1], ['#fff', .72], ['#e8505b', .45], ['#fff', .2]].forEach(([c, k]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(t.x, t.y, t.r * k, 0, 7); ctx.fill(); });
-    }
-    // previous shot and current trail
-    ctx.fillStyle = 'rgba(40,60,90,.28)'; for (const [x, y] of lastTrail) { ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill(); }
-    ctx.fillStyle = 'rgba(40,60,90,.55)'; for (const [x, y] of trail) { ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill(); }
-
-    // protractor
-    ctx.strokeStyle = 'rgba(30,50,80,.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(CX, CY, 92, -Math.PI / 2, 0); ctx.stroke();
+  function drawTarget(c, t, time) {
+    if (t.bob) { c.save(); c.strokeStyle = 'rgba(255,255,255,.18)'; c.setLineDash([4, 6]); c.beginPath(); c.moveTo(t.x, t.by - t.bob); c.lineTo(t.x, t.by + t.bob); c.stroke(); c.restore(); }
+    const pulse = 1 + Math.sin(time * 4 + t.x) * 0.04, r = t.r * pulse;
+    K.orb(c, t.x, t.y, r, RED, { glow: 20 });
+    c.fillStyle = 'rgba(255,255,255,.92)'; c.beginPath(); c.arc(t.x, t.y, r * 0.7, 0, 7); c.fill();
+    K.orb(c, t.x, t.y, r * 0.45, RED, { glow: 0 });
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(t.x, t.y, r * 0.17, 0, 7); c.fill();
+  }
+  function drawDots(c, pts, a, r) {
+    c.save(); c.fillStyle = `rgba(255,214,120,${a})`; c.shadowColor = GOLD; c.shadowBlur = a > 0.4 ? 8 : 0;
+    for (const [x, y] of pts) { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+    c.restore();
+  }
+  function drawProtractor(c) {
+    const a = angle * Math.PI / 180;
+    c.save();
+    c.fillStyle = 'rgba(255,204,51,.10)'; c.beginPath(); c.moveTo(CX, CY); c.arc(CX, CY, 92, -a, 0); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(220,228,255,.3)'; c.lineWidth = 1.5; c.beginPath(); c.arc(CX, CY, 92, -Math.PI / 2, 0); c.stroke();
     for (let d = 0; d <= 90; d += 5) {
-      const a = d * Math.PI / 180, r1 = d % 15 === 0 ? 80 : 86;
-      ctx.beginPath(); ctx.moveTo(CX + Math.cos(a) * r1, CY - Math.sin(a) * r1); ctx.lineTo(CX + Math.cos(a) * 92, CY - Math.sin(a) * 92); ctx.stroke();
-      if (d % 15 === 0) text(d + '°', CX + Math.cos(a) * 106, CY - Math.sin(a) * 106, 11, 'rgba(30,50,80,.75)', 700);
+      const q = d * Math.PI / 180, r1 = d % 15 === 0 ? 80 : 86;
+      c.beginPath(); c.moveTo(CX + Math.cos(q) * r1, CY - Math.sin(q) * r1); c.lineTo(CX + Math.cos(q) * 92, CY - Math.sin(q) * 92); c.stroke();
+      if (d % 15 === 0) K.text(d + '°', CX + Math.cos(q) * 106, CY - Math.sin(q) * 106, 11, 'rgba(220,228,250,.7)', { weight: 600, c });
     }
-    // short aiming guide (just the start of the path)
-    if (state === 'play' && !ball) {
-      const a = angle * Math.PI / 180, v = speed();
-      ctx.fillStyle = 'rgba(255,255,255,.95)';
-      for (let i = 1; i <= 6; i++) { const t = i * .035; const x = CX + Math.cos(a) * 48 + Math.cos(a) * v * t + .5 * wind * t * t, y = CY - Math.sin(a) * 48 - Math.sin(a) * v * t + .5 * G * t * t; ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill(); }
+    c.restore();
+    K.glowLine(c, [[CX + Math.cos(a) * 60, CY - Math.sin(a) * 60], [CX + Math.cos(a) * 96, CY - Math.sin(a) * 96]], GOLD, 2, 10);
+  }
+  function drawCannon(c) {
+    c.save(); c.translate(CX, CY); c.rotate(-angle * Math.PI / 180);
+    const g = c.createLinearGradient(0, -12, 0, 12);
+    g.addColorStop(0, '#8b9bd6'); g.addColorStop(0.5, '#47548a'); g.addColorStop(1, '#232a4d');
+    c.shadowColor = 'rgba(79,209,255,.5)'; c.shadowBlur = 12;
+    c.fillStyle = g; K.rr(c, -6, -11, 56, 22, 8); c.fill();
+    c.shadowBlur = 0;
+    c.fillStyle = 'rgba(255,255,255,.25)'; K.rr(c, -2, -9, 48, 6, 3); c.fill();
+    const m = c.createLinearGradient(0, -13, 0, 13);
+    m.addColorStop(0, '#ffe08a'); m.addColorStop(1, '#c98a1a');
+    c.fillStyle = m; K.rr(c, 38, -13, 14, 26, 5); c.fill();
+    c.restore();
+    K.orb(c, CX, CY + 2, 17, '#3a2e6c', { glow: 8 });
+    K.orb(c, CX, CY + 2, 6, GOLD, { glow: 8 });
+  }
+
+  function draw(c, t) {
+    drawScene(c, t);
+    for (const w of walls) drawWall(c, w);
+    for (const tg of targets) { if (K.state !== 'play') tg.y = bobY(tg); if (!tg.hit) drawTarget(c, tg, t); }
+    drawDots(c, lastTrail, 0.35, 2.2);
+    if (trail.length > 1) K.glowLine(c, ball ? [...trail, [ball.x, ball.y]] : trail, 'rgba(255,214,120,.8)', 2.5, 10);
+    drawProtractor(c);
+    // short aiming guide: just the start of the path
+    if (K.state === 'play' && !ball) {
+      const a = angle * Math.PI / 180, v = speed(), pts = [];
+      for (let i = 1; i <= 6; i++) {
+        const s = i * 0.035;
+        pts.push([CX + Math.cos(a) * 48 + Math.cos(a) * v * s + 0.5 * wind * s * s, CY - Math.sin(a) * 48 - Math.sin(a) * v * s + 0.5 * G * s * s]);
+      }
+      c.save(); c.shadowColor = '#fff'; c.shadowBlur = 8;
+      pts.forEach(([x, y], i) => { c.fillStyle = `rgba(255,255,255,${0.95 - i * 0.1})`; c.beginPath(); c.arc(x, y, 3.4 - i * 0.2, 0, 7); c.fill(); });
+      c.restore();
     }
-    // cannon
-    ctx.save(); ctx.translate(CX, CY); ctx.rotate(-angle * Math.PI / 180);
-    ctx.fillStyle = '#2b3a55'; rr(-6, -11, 56, 22, 8); ctx.fill(); ctx.fillStyle = '#3d5277'; rr(30, -13, 22, 26, 6); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = '#5b3d26'; ctx.beginPath(); ctx.arc(CX, CY + 2, 17, 0, 7); ctx.fill(); ctx.fillStyle = '#c99a5e'; ctx.beginPath(); ctx.arc(CX, CY + 2, 6, 0, 7); ctx.fill();
-    // ball
-    if (ball) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(ball.x - 2, ball.y - 2, 2.5, 0, 7); ctx.fill(); }
-    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / .7); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2.5, p.y - 2.5, 5, 5); }
-    ctx.globalAlpha = 1;
-    for (const t of toasts) { ctx.globalAlpha = Math.max(0, 1 - t.age / 1.6); text(t.t, t.x, t.y - t.age * 30, 20, '#1d2b48'); }
-    ctx.globalAlpha = 1;
+    drawCannon(c);
+    if (ball) K.orb(c, ball.x, ball.y, BALL, '#ffe6a0', { glow: 18 });
 
     // HUD
-    if (state !== 'title') {
-      ctx.fillStyle = 'rgba(16,24,42,.82)'; rr(10, 10, W - 20, 44, 12); ctx.fill();
-      text(`Level ${level}`, 26, 32, 18, '#fff', 800, 'left');
-      text(`Angle ${Math.round(angle)}°`, 260, 32, 20, '#ffcc33');
-      text(`Power ${Math.round(power)}`, 410, 32, 20, '#7dd3ff');
-      // shots left
-      for (let i = 0; i < maxShots; i++) { ctx.fillStyle = i < maxShots - shots ? '#fff' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(W - 30 - i * 20, 32, 7, 0, 7); ctx.fill(); }
-      text('Shots', W - 40 - maxShots * 20, 32, 14, '#9aa6c4', 700, 'right');
-      if (wind) {
-        const x = W - 82, dir = Math.sign(wind);
-        ctx.fillStyle = 'rgba(16,24,42,.7)'; rr(x - 66, 64, 132, 30, 10); ctx.fill();
-        text(`Wind ${dir > 0 ? '→' : '←'} ${Math.abs(wind) >= 80 ? 'strong' : 'light'}`, x, 80, 15, '#fff', 700);
-      }
-      if (L && shots === 0 && !ball) {
-        ctx.font = '600 15px system-ui, sans-serif'; const lines = []; let line = '';
-        for (const w of L.tip.split(' ')) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > 440 && line) { lines.push(line); line = w; } else line = t; } lines.push(line);
-        const bw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 30;
-        ctx.fillStyle = 'rgba(16,24,42,.72)'; rr(W / 2 - bw / 2, 64, bw, 14 + lines.length * 21, 10); ctx.fill();
-        lines.forEach((l, i) => text(l, W / 2, 81 + i * 21, 15, '#fff', 600));
-      }
+    K.chip(12, 10, 'Level', `${lv + 1}/${LEVELS.length}`, '#fff', { w: 84, h: 46 });
+    K.chip(104, 10, 'Angle', `${Math.round(angle)}°`, GOLD, { w: 92, h: 46, size: 21 });
+    K.chip(204, 10, 'Power', Math.round(power), CYAN, { w: 92, h: 46, size: 21 });
+    c.fillStyle = 'rgba(79,209,255,.18)'; K.rr(c, 214, 49, 72, 3, 1.5); c.fill();
+    c.fillStyle = CYAN; K.rr(c, 214, 49, 72 * power / 100, 3, 1.5); c.fill();
+    const sw = 40 + maxShots * 18;
+    K.panel(c, 702 - sw, 10, sw, 46, { r: 12 });
+    K.text('SHOTS', 702 - sw / 2, 24, 10, 'rgba(210,218,245,.65)', { weight: 700 });
+    for (let i = 0; i < maxShots; i++) {
+      const x = 702 - sw / 2 + (i - (maxShots - 1) / 2) * 18;
+      if (i < maxShots - shots) K.orb(c, x, 41, 6, '#ffe6a0', { glow: 8 });
+      else { c.fillStyle = 'rgba(255,255,255,.15)'; c.beginPath(); c.arc(x, 41, 5, 0, 7); c.fill(); }
     }
-    if (state !== 'play') {
-      ctx.fillStyle = 'rgba(12,18,32,.84)'; ctx.fillRect(0, 0, W, H);
-      if (state === 'title') {
-        text('Angle Shot', W / 2, 110, 50, '#ffcc33');
-        wrapText('Drag from the cannon to set the angle and power, then let go to fire. Or use the arrow keys and press Space. Hit every target before you run out of shots.', W / 2, 175, 18, '#dfe5f5', 560);
-        button(level > 1 ? `Continue: level ${level}` : 'Start', W / 2, 290, 260);
-        if (level > 1) text('Start over at level 1', W / 2, 350, 15, '#8f9bb8', 700);
-      } else if (state === 'won') {
-        const stars = shots <= targets.length ? 3 : shots === targets.length + 1 ? 2 : 1;
-        text(level >= LEVELS.length ? 'You beat every level!' : `Level ${level} cleared!`, W / 2, 120, 40, '#ffcc33');
-        text('★'.repeat(stars) + '☆'.repeat(3 - stars), W / 2, 185, 44, '#ffcc33');
-        text(`${shots} shot${shots > 1 ? 's' : ''} for ${targets.length} target${targets.length > 1 ? 's' : ''}`, W / 2, 240, 18, '#dfe5f5', 700);
-        button(level >= LEVELS.length ? 'Back to start' : `Level ${level + 1}`, W / 2, 320, 220);
-      } else {
-        text('Out of shots', W / 2, 130, 42, '#ff8a8a');
-        wrapText('Tip: ' + L.tip, W / 2, 190, 16, '#dfe5f5', 560);
-        button('Try again', W / 2, 300, 220);
-      }
+    K.button(levelsBtn);
+    if (wind) K.chip(788, 62, 'Wind', `${wind > 0 ? '→' : '←'} ${Math.abs(wind) >= 80 ? 'strong' : 'light'}`, CYAN, { align: 'right', w: 112, h: 44, size: 16 });
+    // level tip on the ground strip, before the first shot
+    if (K.state === 'play' && shots === 0 && !ball) {
+      c.font = K.font(13, 600);
+      const lines = []; let line = '';
+      for (const w of L.tip.split(' ')) { const s = line ? line + ' ' + w : w; if (c.measureText(s).width > 500 && line) { lines.push(line); line = w; } else line = s; }
+      lines.push(line);
+      const bw = Math.max(...lines.map(l => c.measureText(l).width)) + 28, bh = 12 + lines.length * 16, cx = 420;
+      K.panel(c, cx - bw / 2, H - 4 - bh, bw, bh, { r: 10, fill: 'rgba(8,12,28,.78)' });
+      lines.forEach((l, i) => K.text(l, cx, H - 4 - bh + 14 + i * 16, 13, '#e6eaf8', { weight: 600 }));
     }
   }
-  function button(t, x, y, w) { ctx.fillStyle = '#ffcc33'; rr(x - w / 2, y - 28, w, 56, 14); ctx.fill(); text(t, x, y + 1, 21, '#111'); }
 
-  function frame(t) { const dt = Math.min(.04, (t - last) / 1000 || 0); last = t; update(dt); draw(); requestAnimationFrame(frame); }
-  requestAnimationFrame(frame);
   // For automated testing.
-  window.__as = { get state() { return state; }, get ball() { return ball; }, get targets() { return targets; }, get level() { return level; }, startLevel, set: (a, p) => { angle = a; power = p; }, fire, LEVELS };
+  window.__as = { get state() { return K.state; }, get ball() { return ball; }, get targets() { return targets; }, get level() { return lv + 1; }, startLevel: n => startLevel(n - 1), set: (a, p) => { angle = a; power = p; }, fire, LEVELS };
 })();
 </script>
 </body>

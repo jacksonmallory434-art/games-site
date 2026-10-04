@@ -4,36 +4,35 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Number Blaster</title>
-<style>
-  html, body { margin: 0; height: 100%; background: #0b0d16; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  canvas { display: block; cursor: crosshair; }
-</style>
+<script src="../_kit/kit.js"></script>
 </head>
 <body>
-<canvas id="c"></canvas>
 <script>
 // Number Blaster — a MathAdvice original.
 // Numbers fall from space. Zap the ones that fit the rule; let the rest fall.
 (() => {
-  const W = 460, H = 700;
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-  let scale = 1;
-  function fit() {
-    const dpr = window.devicePixelRatio || 1;
-    scale = Math.min(innerWidth / W, innerHeight / H);
-    cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
-    cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
-    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-  }
-  addEventListener('resize', fit); fit();
+  const W = 460, H = 700, GROUND = H - 92, SHIP = [W / 2, H - 50], TOP = 118, PER_WAVE = 10;
+  const GOLD = '#ffd34d', GOOD = '#4fd1ff', BAD = '#ff5d73';
 
-  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const K = window.K = MA.game({
+    slug: 'number-blaster', title: 'Number Blaster', w: W, h: H, accent: GOLD, accent2: '#ff6bd6', bg: ['#070b22', '#170a2e'],
+    tagline: 'Numbers are falling from space. Zap the ones that fit the rule.',
+    how: [
+      'Each wave has a rule, like <b>Multiples of 6</b>.',
+      'Tap or click numbers that fit to zap them.',
+      'Let the others fall past the shield.',
+      'A wrong zap or a missed fit costs a heart.',
+      'Zap in a row for a combo bonus.',
+    ],
+    start, update, draw, idle,
+    down(x, y) { if (K.state === 'play') zap(x, y); },
+    move(x, y) { if (K.state === 'play') aim = Math.atan2(Math.min(y, SHIP[1] - 20) - SHIP[1], x - SHIP[0]); },
+  });
+  // Pick up a best score saved before the kit.
+  if (!K.best()) { try { const old = +localStorage.getItem('ma-numberblaster-best') || 0; if (old) K.save('best', old); } catch (e) {} }
+
+  const rnd = K.ri, pick = K.pick;
   const isPrime = n => { if (n < 2) return false; for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };
-  const BEST = 'ma-numberblaster-best';
-  const getBest = () => { try { return +localStorage.getItem(BEST) || 0; } catch (e) { return 0; } };
-  const setBest = v => { try { localStorage.setItem(BEST, v); } catch (e) {} };
 
   // ---- Rules. Each makes a number that fits (yes) or doesn't (no), plus a short reason for mistakes.
   function makeRule(wave) {
@@ -77,11 +76,12 @@
         return pick(opts);
       };
       return { name: `Equal to ${T}`, make(yes) { const v = yes ? T : T + pick([-3, -2, -1, 1, 2, 3, 6, -6]); return { t: expr(v), v }; },
-        why: (t, o) => `${t.replace('×', ' × ').replace('+', ' + ').replace('−', ' − ').replace('÷', ' ÷ ')} = ${o.v}` };
+        why: (t, o) => `${t.replace(/([×+−÷])/, ' $1 ')} = ${o.v}` };
     }
     if (kind === 'frac') {
+      // fracWhy below gives the explanation
       return { name: 'Bigger than ½', make(yes) { let a, b; do { b = rnd(3, 12); a = rnd(1, b - 1); } while ((a / b > .5) !== yes); return { t: `${a}/${b}`, v: a / b }; },
-        why: (t, o) => o.v === .5 ? `${t} equals ½` : `${t} is less than ${Math.ceil(+t.split('/')[1] / 2 + .01)}/${t.split('/')[1]}... so under ½` };
+        why: (t, o) => fracWhy(o) };
     }
     if (kind === 'neg') {
       const L = pick([-3, -5, 0, -1]);
@@ -89,201 +89,213 @@
         why: (t, o) => `${t} is ${o.v === L ? 'equal to' : 'greater than'} ${String(L).replace('-', '−')}` };
     }
     // decimals
-    return { name: 'Less than 0.5', make(yes) { let n; do n = pick([rnd(1, 99) / 100, rnd(1, 9) / 10, rnd(1, 999) / 1000]); while ((n < .5) !== yes || n === .5); return { t: String(n).replace(/^0/, '0'), v: n }; },
-      why: (t, o) => `${t} is more than 0.5` };
+    return { name: 'Less than 0.5', make(yes) { let n; do n = pick([rnd(1, 99) / 100, rnd(1, 9) / 10, rnd(1, 999) / 1000]); while ((n < .5) !== yes || n === .5); return { t: String(n), v: n }; },
+      why: t => `${t} is more than 0.5` };
   }
-  // A cleaner explanation for fraction mistakes.
   function fracWhy(o) { const [a, b] = o.t.split('/').map(Number); return a * 2 === b ? `${o.t} equals ½` : `${o.t} is ${a * 2 < b ? 'less' : 'more'} than ½ because ${a} is ${a * 2 < b ? 'less' : 'more'} than half of ${b}`; }
 
   // ---- State
-  let state = 'title', score = 0, lives = 3, combo = 0, wave = 1, hits = 0, rule = null, banner = 0;
-  let rocks = [], parts = [], lasers = [], toasts = [], stars = [], spawnT = 0, shake = 0, best = getBest(), last = 0, aim = -Math.PI / 2;
-  const PER_WAVE = 10;
+  let score = 0, lives = 3, combo = 0, wave = 1, hits = 0, rule = null, banner = 0, clearT = 0, lastWhy = '';
+  let rocks = [], lasers = [], notes = [], spawnT = 0, aim = -Math.PI / 2, shieldHit = 0, recoil = 0;
+  const stars = [];
   for (let i = 0; i < 90; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.6 + .3, v: 8 + Math.random() * 30 });
+  const HUES = ['#6b8cff', '#a66bff', '#2ee6c5', '#ff6bd6', '#ff9f43'];
+  const mult = () => Math.min(1 + Math.floor(combo / 3), 5);
 
   function start() {
-    score = 0; lives = 3; combo = 0; wave = 1; hits = 0; rocks = []; parts = []; lasers = []; toasts = [];
-    rule = makeRule(1); banner = 2.2; spawnT = 1.2; state = 'play';
+    score = 0; lives = 3; combo = 0; wave = 1; hits = 0; rocks = []; lasers = []; notes = []; lastWhy = '';
+    rule = makeRule(1); banner = 2.2; spawnT = 1.2; clearT = 0; aim = -Math.PI / 2;
+    K.sfx.whoosh();
   }
   function nextWave() {
     wave++; hits = 0;
-    for (const r of rocks) boom(r.x, r.y, '#6b7090', 8);
+    for (const r of rocks) K.burst(r.x, r.y, '#8a90b8', 8, 160, 3, false);
     rocks = []; let r; do r = makeRule(wave); while (r.name === rule.name); rule = r; banner = 2.2; spawnT = 1.6;
-    lives = Math.min(5, lives + (wave % 3 === 0 ? 1 : 0));
+    if (wave % 3 === 0 && lives < 5) { lives++; K.float(W / 2, H / 2 + 100, '+1 heart', BAD, 22); }
+    K.sfx.whoosh();
   }
   function spawn() {
     const yes = Math.random() < .45;
     const o = rule.make(yes);
     const R = o.t.length > 4 ? 36 : 31;
-    const pts = []; const n = 11; for (let i = 0; i < n; i++) pts.push(.82 + Math.random() * .22);
-    rocks.push({ ...o, yes, x: rnd(R + 6, W - R - 6), y: 86 - R, r: R, vy: 42 + wave * 7 + Math.random() * 18, vx: (Math.random() - .5) * 20, rot: Math.random() * 6, vr: (Math.random() - .5) * .8, pts, hue: rnd(0, 3) });
+    // try a few spots so new rocks don't land on top of each other
+    let x = 0;
+    for (let k = 0; k < 8; k++) { x = rnd(R + 6, W - R - 6); if (!rocks.some(q => q.y < TOP + 90 && Math.abs(q.x - x) < q.r + R + 6)) break; }
+    const pts = []; for (let i = 0; i < 11; i++) pts.push(.84 + Math.random() * .2);
+    rocks.push({ ...o, yes, x, y: TOP + 22, r: R, vy: 42 + wave * 7 + Math.random() * 18, vx: (Math.random() - .5) * 20, rot: Math.random() * 6, vr: (Math.random() - .5) * .8, pts, col: pick(HUES), born: 0 });
   }
-  function boom(x, y, color, n = 18) {
-    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = 40 + Math.random() * 220; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .5 + Math.random() * .5, max: 1, c: color, sz: 2 + Math.random() * 3 }); }
-  }
-  function toast(text, x, y, color, big) { toasts.push({ text, x, y, color, t: 0, big }); }
-  function lose(msg) {
-    lives--; combo = 0; shake = .35; toast(msg, W / 2, H - 170, '#ff6b6b', true);
-    if (lives <= 0) { state = 'over'; best = Math.max(best, score); setBest(best); }
+  // A mistake explanation shown as a card near the bottom.
+  function note(text) { notes = [{ text, t: 0 }]; }
+  function lose(why) {
+    lives--; combo = 0; lastWhy = why; note('✕ ' + why);
+    K.shake(10); K.flash(BAD, .25); K.sfx.bad();
+    if (lives <= 0) {
+      K.sfx.boom(); K.burst(SHIP[0], SHIP[1], BAD, 40, 320, 5);
+      K.gameOver(score, { msg: `You reached wave <b>${wave}</b>.<br><span style="opacity:.8">Last slip: ${lastWhy}</span>`, delay: 900 });
+    }
   }
 
   function zap(px, py) {
-    if (state !== 'play' || banner > 1.4) return;
+    if (banner > 1.4) return;
     let hit = null, bd = 1e9;
     for (const r of rocks) { const d = Math.hypot(r.x - px, r.y - py); if (d < r.r + 14 && d < bd) { bd = d; hit = r; } }
-    const sx = W / 2, sy = H - 52;
-    aim = Math.atan2((hit ? hit.y : py) - sy, (hit ? hit.x : px) - sx);
-    lasers.push({ x1: sx + Math.cos(aim) * 26, y1: sy + Math.sin(aim) * 26, x2: hit ? hit.x : px, y2: hit ? hit.y : py, t: .14, good: !hit || hit.yes });
-    if (!hit) return;
+    const tx = hit ? hit.x : px, ty = hit ? hit.y : py;
+    aim = Math.atan2(Math.min(ty, SHIP[1] - 20) - SHIP[1], tx - SHIP[0]); recoil = 1;
+    lasers.push({ x1: SHIP[0] + Math.cos(aim) * 28, y1: SHIP[1] + Math.sin(aim) * 28, x2: tx, y2: ty, t: .16, col: !hit || hit.yes ? GOOD : BAD });
+    if (!hit) { K.sfx.tick(); return; }
     rocks.splice(rocks.indexOf(hit), 1);
     if (hit.yes) {
-      combo++; const mult = Math.min(1 + Math.floor(combo / 3), 5), pts = 10 * mult;
+      combo++; const m = mult(), pts = 10 * m;
       score += pts; hits++;
-      boom(hit.x, hit.y, '#ffcc33'); boom(hit.x, hit.y, '#ff8a3d', 10);
-      toast('+' + pts + (mult > 1 ? `  ×${mult}` : ''), hit.x, hit.y, '#ffcc33');
-      if (hits >= PER_WAVE) { score += 50 * wave; toast(`Wave clear! +${50 * wave}`, W / 2, H / 2, '#3ecf8e', true); setTimeout(nextWave, 600); hits = -999; }
+      K.burst(hit.x, hit.y, GOLD, 18, 260, 4); K.burst(hit.x, hit.y, '#ff9f43', 10, 180, 3, false);
+      K.float(K.clamp(hit.x, 60, W - 60), hit.y - 10, '+' + pts + (m > 1 ? ` ×${m}` : ''), GOLD, 22);
+      K.sfx.pop(); if (combo % 3 === 0 && m > 1) K.sfx.coin();
+      if (hits >= PER_WAVE && !clearT) {
+        score += 50 * wave; clearT = .9;
+        K.float(W / 2, H / 2, `Wave clear! +${50 * wave}`, '#7ee36b', 28); K.sfx.win();
+      }
     } else {
-      boom(hit.x, hit.y, '#ff6b6b');
-      let why = rule.name.startsWith('Bigger') ? fracWhy(hit) : rule.why(hit.t, hit);
-      lose(`✕ ${why}`);
+      K.burst(hit.x, hit.y, BAD, 22, 260, 4);
+      lose(rule.why(hit.t, hit));
     }
   }
-  function pointer(e) {
-    const r = cv.getBoundingClientRect();
-    return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
-  }
-  cv.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    if (state !== 'play') { start(); return; }
-    zap(...pointer(e));
-  });
-  cv.addEventListener('pointermove', e => { if (state === 'play') { const [x, y] = pointer(e); aim = Math.atan2(y - (H - 52), x - W / 2); } });
-  addEventListener('keydown', e => { if ((e.code === 'Space' || e.code === 'Enter') && state !== 'play') { e.preventDefault(); start(); } });
 
   // ---- Loop
-  function update(dt) {
+  function idle(dt) {
     for (const s of stars) { s.y += s.v * dt; if (s.y > H) { s.y = 0; s.x = Math.random() * W; } }
-    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
-    parts = parts.filter(p => p.life > 0);
     for (const l of lasers) l.t -= dt; lasers = lasers.filter(l => l.t > 0);
-    for (const t of toasts) t.t += dt; toasts = toasts.filter(t => t.t < (t.big ? 2.2 : .9));
-    shake = Math.max(0, shake - dt);
-    if (state !== 'play') return;
+    for (const n of notes) n.t += dt; notes = notes.filter(n => n.t < 2.6);
+  }
+  function update(dt) {
+    idle(dt);
+    shieldHit = Math.max(0, shieldHit - dt); recoil = Math.max(0, recoil - dt * 6);
+    if (lives <= 0) return;
+    if (clearT) { clearT -= dt; if (clearT <= 0) { clearT = 0; nextWave(); } }
     if (banner > 0) { banner -= dt; if (banner > 1.4) return; }
     spawnT -= dt;
-    if (spawnT <= 0) { spawn(); spawnT = Math.max(.55, 1.25 - wave * .07) * (.75 + Math.random() * .5); }
+    if (spawnT <= 0 && !clearT) { spawn(); spawnT = Math.max(.55, 1.25 - wave * .07) * (.75 + Math.random() * .5); }
     for (const r of rocks) {
-      r.y += r.vy * dt; r.x += r.vx * dt; r.rot += r.vr * dt;
-      if (r.x < r.r || r.x > W - r.r) r.vx *= -1;
+      r.y += r.vy * dt; r.x += r.vx * dt; r.rot += r.vr * dt; r.born += dt;
+      if (r.x < r.r) { r.x = r.r; r.vx = Math.abs(r.vx); }
+      if (r.x > W - r.r) { r.x = W - r.r; r.vx = -Math.abs(r.vx); }
     }
-    const gone = rocks.filter(r => r.y > H - 92);
-    rocks = rocks.filter(r => r.y <= H - 92);
+    const gone = rocks.filter(r => r.y > GROUND);
+    rocks = rocks.filter(r => r.y <= GROUND);
     for (const r of gone) {
-      if (r.yes) { boom(r.x, H - 92, '#ff6b6b', 12); lose(`Missed ${r.t}: it fits the rule`); }
-      else { boom(r.x, H - 92, '#4c5270', 8); }
-      if (state !== 'play') break;
+      if (r.yes && !clearT) { K.burst(r.x, GROUND, BAD, 16, 220, 4); shieldHit = .6; lose(`Missed ${r.t}: it fits the rule`); }
+      else K.burst(r.x, GROUND, '#8a90b8', 8, 140, 3, false);
+      if (lives <= 0) break;
     }
   }
 
-  function rock(r) {
-    ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot);
-    const base = ['#5b4a7a', '#4a5a7a', '#6a5068', '#4d6170'][r.hue];
-    ctx.beginPath();
-    r.pts.forEach((k, i) => { const a = i / r.pts.length * Math.PI * 2; const x = Math.cos(a) * r.r * k, y = Math.sin(a) * r.r * k; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-    ctx.closePath(); ctx.fillStyle = base; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.arc(-r.r * .35, -r.r * .3, r.r * .18, 0, 7); ctx.arc(r.r * .4, r.r * .35, r.r * .12, 0, 7); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = '#fff'; ctx.font = `800 ${r.t.length > 5 ? 17 : r.t.length > 3 ? 20 : 24}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4; ctx.fillText(r.t, r.x, r.y + 1); ctx.shadowBlur = 0;
+  // ---- Drawing
+  function rock(c, r) {
+    const pop = Math.min(1, r.born / .25);
+    c.save(); c.translate(r.x, r.y); c.scale(K.back(pop) || .01, K.back(pop) || .01);
+    c.save(); c.rotate(r.rot);
+    c.beginPath();
+    r.pts.forEach((k, i) => { const a = i / r.pts.length * Math.PI * 2, x = Math.cos(a) * r.r * k, y = Math.sin(a) * r.r * k; i ? c.lineTo(x, y) : c.moveTo(x, y); });
+    c.closePath();
+    const g = c.createRadialGradient(-r.r * .35, -r.r * .4, r.r * .1, 0, 0, r.r * 1.05);
+    g.addColorStop(0, K.shade(r.col, .25)); g.addColorStop(.55, K.shade(r.col, -.35)); g.addColorStop(1, K.shade(r.col, -.7));
+    c.shadowColor = r.col; c.shadowBlur = 16; c.fillStyle = g; c.fill();
+    c.shadowBlur = 0; c.lineWidth = 2; c.strokeStyle = K.alpha(r.col, .9); c.stroke();
+    c.fillStyle = 'rgba(0,0,0,.22)';
+    c.beginPath(); c.arc(-r.r * .35, r.r * .3, r.r * .17, 0, 7); c.arc(r.r * .42, -r.r * .1, r.r * .12, 0, 7); c.fill();
+    c.restore();
+    const size = r.t.length > 5 ? 17 : r.t.length > 3 ? 20 : 25;
+    K.text(r.t, 0, 1, size, '#fff', { weight: 800, stroke: 4, strokeColor: 'rgba(5,6,20,.7)', c });
+    c.restore();
   }
-  function heart(x, y, on) {
-    ctx.fillStyle = on ? '#ff5d73' : '#2c3047';
-    ctx.beginPath(); ctx.moveTo(x, y + 5); ctx.bezierCurveTo(x - 11, y - 3, x - 6, y - 12, x, y - 6); ctx.bezierCurveTo(x + 6, y - 12, x + 11, y - 3, x, y + 5); ctx.fill();
+  function heart(c, x, y, on) {
+    c.save();
+    if (on) { c.shadowColor = BAD; c.shadowBlur = 10; }
+    const g = c.createLinearGradient(0, y - 10, 0, y + 6);
+    g.addColorStop(0, on ? '#ff9fb0' : '#3a3f5c'); g.addColorStop(1, on ? BAD : '#262a42');
+    c.fillStyle = g;
+    c.beginPath(); c.moveTo(x, y + 7); c.bezierCurveTo(x - 13, y - 2, x - 7, y - 14, x, y - 7); c.bezierCurveTo(x + 7, y - 14, x + 13, y - 2, x, y + 7); c.fill();
+    c.restore();
   }
-  function text(t, x, y, size, color, weight = 800, align = 'center') {
-    ctx.font = `${weight} ${size}px system-ui, sans-serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y);
+  function wrapLines(c, t, size, maxW) {
+    c.font = K.font(size, 700); const lines = []; let line = '';
+    for (const w of t.split(' ')) { const test = line ? line + ' ' + w : w; if (c.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; }
+    lines.push(line); return lines;
   }
-  function wrap(t, x, y, size, color, maxW) {
-    ctx.font = `700 ${size}px system-ui, sans-serif`; const words = t.split(' '); let line = '', yy = y; const lines = [];
-    for (const w of words) { const test = line ? line + ' ' + w : w; if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; }
-    lines.push(line); lines.forEach((l, i) => text(l, x, yy + i * (size + 6), size, color, 700));
+  function ship(c, t) {
+    const [x, y] = SHIP;
+    // engine glow
+    const fl = 14 + Math.sin(t * 40) * 3;
+    const eg = c.createRadialGradient(x, y + 18, 0, x, y + 18, 34);
+    eg.addColorStop(0, 'rgba(255,190,90,.55)'); eg.addColorStop(1, 'rgba(255,120,60,0)');
+    c.fillStyle = eg; c.beginPath(); c.arc(x, y + 18, 34, 0, 7); c.fill();
+    c.save(); c.translate(x, y); c.rotate(aim + Math.PI / 2); c.translate(0, recoil * 4);
+    c.fillStyle = '#ffb347'; c.beginPath(); c.moveTo(-6, 10); c.lineTo(0, 10 + fl); c.lineTo(6, 10); c.fill();
+    const g = c.createLinearGradient(-18, 0, 18, 0);
+    g.addColorStop(0, '#2a59c9'); g.addColorStop(.5, '#8fe3ff'); g.addColorStop(1, '#2a59c9');
+    c.shadowColor = GOOD; c.shadowBlur = 18; c.fillStyle = g;
+    c.beginPath(); c.moveTo(0, -32); c.lineTo(19, 14); c.lineTo(0, 6); c.lineTo(-19, 14); c.closePath(); c.fill();
+    c.shadowBlur = 0; c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 1.5; c.stroke();
+    c.restore();
+    K.orb(c, x, y - 2, 6, GOLD, { glow: 12 });
   }
 
-  function draw() {
-    ctx.save();
-    if (shake > 0) ctx.translate((Math.random() - .5) * 14 * shake, (Math.random() - .5) * 14 * shake);
-    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b0d1f'); g.addColorStop(1, '#161a33');
-    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
-    for (const s of stars) { ctx.globalAlpha = .4 + s.s / 3; ctx.fillStyle = '#c9d3ff'; ctx.fillRect(s.x, s.y, s.s, s.s); }
-    ctx.globalAlpha = 1;
-    // Ground shield line
-    ctx.strokeStyle = 'rgba(80,140,255,.35)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.moveTo(0, H - 92); ctx.lineTo(W, H - 92); ctx.stroke(); ctx.setLineDash([]);
-    for (const r of rocks) rock(r);
-    for (const l of lasers) {
-      ctx.strokeStyle = l.good ? `rgba(120,220,255,${l.t / .14})` : `rgba(255,107,107,${l.t / .14})`; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
-      ctx.strokeStyle = `rgba(255,255,255,${l.t / .14})`; ctx.lineWidth = 2; ctx.stroke();
-    }
-    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz); }
-    ctx.globalAlpha = 1;
-    // Ship
-    ctx.save(); ctx.translate(W / 2, H - 52); ctx.rotate(aim + Math.PI / 2);
-    ctx.fillStyle = '#2f6fd6'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(18, 14); ctx.lineTo(0, 6); ctx.lineTo(-18, 14); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#ffcc33'; ctx.beginPath(); ctx.arc(0, -6, 6, 0, 7); ctx.fill();
-    ctx.restore();
-    ctx.restore();
+  function draw(c, t) {
+    for (const s of stars) { c.globalAlpha = .35 + s.s / 3; c.fillStyle = '#d6deff'; c.fillRect(s.x, s.y, s.s, s.s); }
+    c.globalAlpha = 1;
+    // shield line
+    c.save();
+    const sc = shieldHit > 0 ? BAD : GOOD;
+    c.globalAlpha = .35 + .25 * Math.sin(t * 3) + shieldHit;
+    c.setLineDash([10, 8]); c.lineDashOffset = -t * 20;
+    K.glowLine(c, [[0, GROUND], [W, GROUND]], sc, 2, 12);
+    c.restore();
+    const sg = c.createLinearGradient(0, GROUND, 0, H);
+    sg.addColorStop(0, K.alpha(sc, .1)); sg.addColorStop(1, K.alpha(sc, 0));
+    c.fillStyle = sg; c.fillRect(0, GROUND, W, H - GROUND);
+
+    for (const r of rocks) rock(c, r);
+    for (const l of lasers) { c.save(); c.globalAlpha = l.t / .16; K.glowLine(c, [[l.x1, l.y1], [l.x2, l.y2]], l.col, 5, 18); c.restore(); }
+    ship(c, t);
 
     // HUD
-    ctx.fillStyle = 'rgba(11,13,31,.85)'; ctx.fillRect(0, 0, W, 86);
-    text('Score ' + score, 16, 22, 17, '#ecedf3', 800, 'left');
-    for (let i = 0; i < Math.max(3, lives); i++) heart(W - 24 - i * 26, 22, i < lives);
     if (rule) {
-      text(rule.name, W / 2, 56, 26, '#ffcc33');
-      text(`Wave ${wave}`, 16, 56, 13, '#8f94b3', 700, 'left');
-      if (combo >= 3) text(`Combo ×${Math.min(1 + Math.floor(combo / 3), 5)}`, W - 16, 56, 14, '#3ecf8e', 800, 'right');
-      // wave progress
-      ctx.fillStyle = '#23283f'; ctx.fillRect(0, 82, W, 4); ctx.fillStyle = '#3ecf8e'; ctx.fillRect(0, 82, W * Math.max(0, hits) / PER_WAVE, 4);
+      K.chip(12, 10, 'Score', score, '#fff', { w: 104, h: 50 });
+      K.chip(W / 2, 10, 'Wave', wave, GOLD, { w: 80, h: 50, align: 'center' });
+      const hw = Math.max(3, lives) * 26 + 20;
+      K.panel(c, W - 12 - hw, 10, hw, 50, { r: 12 });
+      K.text('LIVES', W - 12 - hw / 2, 24, 10, 'rgba(210,218,245,.65)', { weight: 700 });
+      for (let i = 0; i < Math.max(3, lives); i++) heart(c, W - 12 - hw + 23 + i * 26, 42, i < lives);
+      // rule bar with wave progress
+      K.panel(c, 12, 66, W - 24, 44, { r: 12, glow: 14, glowColor: K.alpha(GOLD, .35), stroke: K.alpha(GOLD, .35) });
+      K.text(rule.name, W / 2, 85, 22, GOLD, { weight: 800, glow: 12 });
+      const pw = W - 48, prog = Math.min(1, hits / PER_WAVE);
+      c.fillStyle = 'rgba(255,255,255,.08)'; K.rr(c, 24, 101, pw, 4, 2); c.fill();
+      if (prog > 0) { c.save(); c.shadowColor = '#7ee36b'; c.shadowBlur = 8; c.fillStyle = '#7ee36b'; K.rr(c, 24, 101, Math.max(4, pw * prog), 4, 2); c.fill(); c.restore(); }
+      if (combo >= 3) K.text(`Combo ×${mult()}`, 16, H - 26, 16, '#7ee36b', { weight: 800, glow: 10, align: 'left' });
     }
-    for (const t of toasts) {
-      const a = Math.min(1, (t.big ? 2.2 : .9) - t.t);
-      ctx.globalAlpha = a;
-      if (t.big) wrap(t.text, t.x, t.y - t.t * 10, 17, t.color, W - 60); else text(t.text, t.x, t.y - t.t * 50, 18, t.color);
-      ctx.globalAlpha = 1;
+    // mistake card
+    for (const n of notes) {
+      const a = Math.min(1, n.t * 6, (2.6 - n.t) * 2), lines = wrapLines(c, n.text, 16, W - 80), h = lines.length * 22 + 22, y = GROUND - 30 - h;
+      c.save(); c.globalAlpha = a;
+      K.panel(c, 24, y, W - 48, h, { r: 14, fill: 'rgba(40,10,24,.85)', stroke: K.alpha(BAD, .6), glow: 16, glowColor: K.alpha(BAD, .5) });
+      lines.forEach((l, i) => K.text(l, W / 2, y + 22 + i * 22, 16, '#ffd0d6', { weight: 700 }));
+      c.restore();
     }
-    if (state === 'play' && banner > 0) {
-      ctx.globalAlpha = Math.min(1, banner * 2);
-      ctx.fillStyle = 'rgba(11,13,31,.82)'; ctx.fillRect(0, H / 2 - 80, W, 150);
-      text(`Wave ${wave}`, W / 2, H / 2 - 42, 20, '#8f94b3');
-      text('Zap: ' + rule.name, W / 2, H / 2, 30, '#ffcc33');
-      text('Tap the numbers that fit. Let the others fall.', W / 2, H / 2 + 40, 15, '#c9cde0', 600);
-      ctx.globalAlpha = 1;
-    }
-    if (state === 'title' || state === 'over') {
-      ctx.fillStyle = 'rgba(11,13,31,.88)'; ctx.fillRect(0, 0, W, H);
-      if (state === 'title') {
-        text('Number Blaster', W / 2, 190, 42, '#ffcc33');
-        wrap('Numbers are falling from space. Each wave has a rule, like "Multiples of 6" or "Prime numbers".', W / 2, 260, 17, '#c9cde0', 380);
-        wrap('Click or tap the numbers that fit the rule to zap them. Let the others fall. Zapping a wrong number or missing a right one costs a heart.', W / 2, 340, 17, '#c9cde0', 380);
-        if (best) text('Best: ' + best, W / 2, 450, 17, '#8f94b3', 700);
-      } else {
-        text('Game over', W / 2, 210, 42, '#ffcc33');
-        text(String(score), W / 2, 290, 64, '#fff');
-        text(score >= best && score > 0 ? 'New best!' : 'Best: ' + best, W / 2, 350, 18, '#8f94b3', 700);
-        text(`You reached wave ${wave}`, W / 2, 385, 17, '#c9cde0', 600);
-      }
-      ctx.fillStyle = '#ffcc33'; roundRect(W / 2 - 100, 490, 200, 58, 14); ctx.fill();
-      text(state === 'title' ? 'Start' : 'Play again', W / 2, 519, 22, '#111');
+    // wave banner
+    if (K.state === 'play' && banner > 0) {
+      const a = Math.min(1, banner * 2, (2.2 - banner) * 5);
+      c.save(); c.globalAlpha = a;
+      K.panel(c, 24, H / 2 - 86, W - 48, 150, { r: 18, fill: 'rgba(12,14,36,.88)', glow: 30, glowColor: K.alpha(GOLD, .4), stroke: K.alpha(GOLD, .4) });
+      K.text(`WAVE ${wave}`, W / 2, H / 2 - 52, 13, GOLD, { weight: 800 });
+      K.text('Zap: ' + rule.name, W / 2, H / 2 - 14, 28, '#fff', { weight: 800, glow: 16, glowColor: GOLD });
+      K.text('Tap the numbers that fit.', W / 2, H / 2 + 24, 15, '#c9cde0', { weight: 600 });
+      K.text('Let the others fall.', W / 2, H / 2 + 44, 15, '#c9cde0', { weight: 600 });
+      c.restore();
     }
   }
-  function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
-  function frame(t) {
-    const dt = Math.min(.05, (t - last) / 1000 || 0); last = t;
-    update(dt); draw(); requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
   // For automated testing.
-  window.__nb = { get state() { return state; }, get rocks() { return rocks; }, get rule() { return rule; }, get score() { return score; }, get lives() { return lives; }, get wave() { return wave; }, start, zap, makeRule, skip: () => { banner = 0; } };
+  window.__nb = { get state() { return K.state; }, get rocks() { return rocks; }, get rule() { return rule; }, get score() { return score; }, get lives() { return lives; }, get wave() { return wave; }, start: K.play, zap, makeRule, skip: () => { banner = 0; } };
 })();
 </script>
 </body>

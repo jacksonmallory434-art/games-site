@@ -71,7 +71,7 @@ const TOTAL = 90;
 let score, timeLeft, running = false, last, answer, locked = false;
 
 function txt(x, y, s, color = INK, size = 20) {
-  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" fill="${color}" font-size="${size}" font-weight="800" font-family="system-ui,sans-serif" text-anchor="middle" dominant-baseline="middle">${s}</text>`;
+  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" fill="${color}" font-size="${size}" font-weight="800" font-family="Lexend,system-ui,sans-serif" text-anchor="middle" dominant-baseline="middle">${s}</text>`;
 }
 function arc(cx, cy, r, a0, a1, color = BLUE) { // degrees, SVG y-down so angles measured counterclockwise visually
   const p0 = [cx + r * Math.cos(R(a0)), cy - r * Math.sin(R(a0))], p1 = [cx + r * Math.cos(R(a1)), cy - r * Math.sin(R(a1))];
