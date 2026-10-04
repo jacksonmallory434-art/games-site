@@ -156,6 +156,7 @@ main { padding-bottom: 56px; }
 @media (max-width: 640px) {
   .site-nav { gap: 14px; }
   .site-nav a:first-child { display: none; }
+  .site-nav a[href$="#teachers"] { display: none; }
   .hero-inner { padding-top: 36px; padding-bottom: 36px; }
   .hero-graph .g-curve, .hero-graph .g-dots { display: none; }
   .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }

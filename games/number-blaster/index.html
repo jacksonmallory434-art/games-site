@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Number Blaster</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d16; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { display: block; cursor: crosshair; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Number Blaster — a MathAdvice original.
+// Numbers fall from space. Zap the ones that fit the rule; let the rest fall.
+(() => {
+  const W = 460, H = 700;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  let scale = 1;
+  function fit() {
+    const dpr = window.devicePixelRatio || 1;
+    scale = Math.min(innerWidth / W, innerHeight / H);
+    cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
+    cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  }
+  addEventListener('resize', fit); fit();
+
+  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const isPrime = n => { if (n < 2) return false; for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };
+  const BEST = 'ma-numberblaster-best';
+  const getBest = () => { try { return +localStorage.getItem(BEST) || 0; } catch (e) { return 0; } };
+  const setBest = v => { try { localStorage.setItem(BEST, v); } catch (e) {} };
+
+  // ---- Rules. Each makes a number that fits (yes) or doesn't (no), plus a short reason for mistakes.
+  function makeRule(wave) {
+    const pool = ['mult', 'prime', 'square', 'factor', 'equals', 'even'];
+    if (wave >= 3) pool.push('frac', 'neg', 'equals', 'prime');
+    if (wave >= 5) pool.push('dec', 'frac', 'mult');
+    const kind = pick(wave === 1 ? ['mult', 'even', 'equals'] : pool);
+    if (kind === 'mult') {
+      const k = pick(wave < 4 ? [2, 3, 5, 10] : [3, 4, 6, 7, 8, 9]);
+      return { name: `Multiples of ${k}`, make(yes) { if (yes) return { t: String(k * rnd(1, 12)) }; let n; do n = rnd(2, k * 12); while (n % k === 0); return { t: String(n) }; },
+        why: t => `${t} ÷ ${k} isn't a whole number` };
+    }
+    if (kind === 'even') {
+      const even = Math.random() < .5;
+      return { name: even ? 'Even numbers' : 'Odd numbers', make(yes) { let n; do n = rnd(1, 99); while ((n % 2 === 0) !== (yes === even)); return { t: String(n) }; },
+        why: t => `${t} is ${+t % 2 ? 'odd' : 'even'}` };
+    }
+    if (kind === 'prime') {
+      const tricky = [9, 15, 21, 25, 27, 33, 35, 39, 45, 49, 51, 55, 57, 63, 65, 69, 77, 81, 85, 87, 91, 93, 95, 1];
+      return { name: 'Prime numbers', make(yes) { let n; if (yes) do n = rnd(2, 97); while (!isPrime(n)); else n = Math.random() < .7 ? pick(tricky) : rnd(2, 49) * 2; return { t: String(n) }; },
+        why: t => { const n = +t; if (n === 1) return '1 is not prime'; for (let i = 2; i < n; i++) if (n % i === 0) return `${n} = ${i} × ${n / i}`; return ''; } };
+    }
+    if (kind === 'square') {
+      return { name: 'Perfect squares', make(yes) { if (yes) return { t: String(rnd(1, 15) ** 2) }; let n; do n = rnd(2, 200); while (Number.isInteger(Math.sqrt(n))); return { t: String(n) }; },
+        why: t => `${t} isn't a whole number squared` };
+    }
+    if (kind === 'factor') {
+      const N = pick([24, 36, 48, 60, 72, 30, 40]);
+      const fs = []; for (let i = 1; i <= N; i++) if (N % i === 0) fs.push(i);
+      return { name: `Factors of ${N}`, make(yes) { if (yes) return { t: String(pick(fs)) }; let n; do n = rnd(2, N - 1); while (N % n === 0); return { t: String(n) }; },
+        why: t => `${N} ÷ ${t} isn't a whole number` };
+    }
+    if (kind === 'equals') {
+      const T = pick(wave < 3 ? [10, 12, 15, 20] : [18, 24, 30, 36, 42, 48]);
+      const expr = v => {
+        const opts = [];
+        for (let a = 2; a <= 12; a++) if (v % a === 0 && v / a <= 12 && v / a >= 2) opts.push(`${a}×${v / a}`);
+        for (let i = 0; i < 3; i++) { const a = rnd(1, v - 1); opts.push(`${a}+${v - a}`); }
+        const b = rnd(2, 15); opts.push(`${v + b}−${b}`);
+        const d = pick([2, 3, 4]); if (v * d <= 150) opts.push(`${v * d}÷${d}`);
+        return pick(opts);
+      };
+      return { name: `Equal to ${T}`, make(yes) { const v = yes ? T : T + pick([-3, -2, -1, 1, 2, 3, 6, -6]); return { t: expr(v), v }; },
+        why: (t, o) => `${t.replace('×', ' × ').replace('+', ' + ').replace('−', ' − ').replace('÷', ' ÷ ')} = ${o.v}` };
+    }
+    if (kind === 'frac') {
+      return { name: 'Bigger than ½', make(yes) { let a, b; do { b = rnd(3, 12); a = rnd(1, b - 1); } while ((a / b > .5) !== yes); return { t: `${a}/${b}`, v: a / b }; },
+        why: (t, o) => o.v === .5 ? `${t} equals ½` : `${t} is less than ${Math.ceil(+t.split('/')[1] / 2 + .01)}/${t.split('/')[1]}... so under ½` };
+    }
+    if (kind === 'neg') {
+      const L = pick([-3, -5, 0, -1]);
+      return { name: `Less than ${String(L).replace('-', '−')}`, make(yes) { let n; do n = rnd(-15, 10); while ((n < L) !== yes); return { t: String(n).replace('-', '−'), v: n }; },
+        why: (t, o) => `${t} is ${o.v === L ? 'equal to' : 'greater than'} ${String(L).replace('-', '−')}` };
+    }
+    // decimals
+    return { name: 'Less than 0.5', make(yes) { let n; do n = pick([rnd(1, 99) / 100, rnd(1, 9) / 10, rnd(1, 999) / 1000]); while ((n < .5) !== yes || n === .5); return { t: String(n).replace(/^0/, '0'), v: n }; },
+      why: (t, o) => `${t} is more than 0.5` };
+  }
+  // A cleaner explanation for fraction mistakes.
+  function fracWhy(o) { const [a, b] = o.t.split('/').map(Number); return a * 2 === b ? `${o.t} equals ½` : `${o.t} is ${a * 2 < b ? 'less' : 'more'} than ½ because ${a} is ${a * 2 < b ? 'less' : 'more'} than half of ${b}`; }
+
+  // ---- State
+  let state = 'title', score = 0, lives = 3, combo = 0, wave = 1, hits = 0, rule = null, banner = 0;
+  let rocks = [], parts = [], lasers = [], toasts = [], stars = [], spawnT = 0, shake = 0, best = getBest(), last = 0, aim = -Math.PI / 2;
+  const PER_WAVE = 10;
+  for (let i = 0; i < 90; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.6 + .3, v: 8 + Math.random() * 30 });
+
+  function start() {
+    score = 0; lives = 3; combo = 0; wave = 1; hits = 0; rocks = []; parts = []; lasers = []; toasts = [];
+    rule = makeRule(1); banner = 2.2; spawnT = 1.2; state = 'play';
+  }
+  function nextWave() {
+    wave++; hits = 0;
+    for (const r of rocks) boom(r.x, r.y, '#6b7090', 8);
+    rocks = []; let r; do r = makeRule(wave); while (r.name === rule.name); rule = r; banner = 2.2; spawnT = 1.6;
+    lives = Math.min(5, lives + (wave % 3 === 0 ? 1 : 0));
+  }
+  function spawn() {
+    const yes = Math.random() < .45;
+    const o = rule.make(yes);
+    const R = o.t.length > 4 ? 36 : 31;
+    const pts = []; const n = 11; for (let i = 0; i < n; i++) pts.push(.82 + Math.random() * .22);
+    rocks.push({ ...o, yes, x: rnd(R + 6, W - R - 6), y: 86 - R, r: R, vy: 42 + wave * 7 + Math.random() * 18, vx: (Math.random() - .5) * 20, rot: Math.random() * 6, vr: (Math.random() - .5) * .8, pts, hue: rnd(0, 3) });
+  }
+  function boom(x, y, color, n = 18) {
+    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = 40 + Math.random() * 220; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .5 + Math.random() * .5, max: 1, c: color, sz: 2 + Math.random() * 3 }); }
+  }
+  function toast(text, x, y, color, big) { toasts.push({ text, x, y, color, t: 0, big }); }
+  function lose(msg) {
+    lives--; combo = 0; shake = .35; toast(msg, W / 2, H - 170, '#ff6b6b', true);
+    if (lives <= 0) { state = 'over'; best = Math.max(best, score); setBest(best); }
+  }
+
+  function zap(px, py) {
+    if (state !== 'play' || banner > 1.4) return;
+    let hit = null, bd = 1e9;
+    for (const r of rocks) { const d = Math.hypot(r.x - px, r.y - py); if (d < r.r + 14 && d < bd) { bd = d; hit = r; } }
+    const sx = W / 2, sy = H - 52;
+    aim = Math.atan2((hit ? hit.y : py) - sy, (hit ? hit.x : px) - sx);
+    lasers.push({ x1: sx + Math.cos(aim) * 26, y1: sy + Math.sin(aim) * 26, x2: hit ? hit.x : px, y2: hit ? hit.y : py, t: .14, good: !hit || hit.yes });
+    if (!hit) return;
+    rocks.splice(rocks.indexOf(hit), 1);
+    if (hit.yes) {
+      combo++; const mult = Math.min(1 + Math.floor(combo / 3), 5), pts = 10 * mult;
+      score += pts; hits++;
+      boom(hit.x, hit.y, '#ffcc33'); boom(hit.x, hit.y, '#ff8a3d', 10);
+      toast('+' + pts + (mult > 1 ? `  ×${mult}` : ''), hit.x, hit.y, '#ffcc33');
+      if (hits >= PER_WAVE) { score += 50 * wave; toast(`Wave clear! +${50 * wave}`, W / 2, H / 2, '#3ecf8e', true); setTimeout(nextWave, 600); hits = -999; }
+    } else {
+      boom(hit.x, hit.y, '#ff6b6b');
+      let why = rule.name.startsWith('Bigger') ? fracWhy(hit) : rule.why(hit.t, hit);
+      lose(`✕ ${why}`);
+    }
+  }
+  function pointer(e) {
+    const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
+  }
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (state !== 'play') { start(); return; }
+    zap(...pointer(e));
+  });
+  cv.addEventListener('pointermove', e => { if (state === 'play') { const [x, y] = pointer(e); aim = Math.atan2(y - (H - 52), x - W / 2); } });
+  addEventListener('keydown', e => { if ((e.code === 'Space' || e.code === 'Enter') && state !== 'play') { e.preventDefault(); start(); } });
+
+  // ---- Loop
+  function update(dt) {
+    for (const s of stars) { s.y += s.v * dt; if (s.y > H) { s.y = 0; s.x = Math.random() * W; } }
+    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
+    parts = parts.filter(p => p.life > 0);
+    for (const l of lasers) l.t -= dt; lasers = lasers.filter(l => l.t > 0);
+    for (const t of toasts) t.t += dt; toasts = toasts.filter(t => t.t < (t.big ? 2.2 : .9));
+    shake = Math.max(0, shake - dt);
+    if (state !== 'play') return;
+    if (banner > 0) { banner -= dt; if (banner > 1.4) return; }
+    spawnT -= dt;
+    if (spawnT <= 0) { spawn(); spawnT = Math.max(.55, 1.25 - wave * .07) * (.75 + Math.random() * .5); }
+    for (const r of rocks) {
+      r.y += r.vy * dt; r.x += r.vx * dt; r.rot += r.vr * dt;
+      if (r.x < r.r || r.x > W - r.r) r.vx *= -1;
+    }
+    const gone = rocks.filter(r => r.y > H - 92);
+    rocks = rocks.filter(r => r.y <= H - 92);
+    for (const r of gone) {
+      if (r.yes) { boom(r.x, H - 92, '#ff6b6b', 12); lose(`Missed ${r.t}: it fits the rule`); }
+      else { boom(r.x, H - 92, '#4c5270', 8); }
+      if (state !== 'play') break;
+    }
+  }
+
+  function rock(r) {
+    ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot);
+    const base = ['#5b4a7a', '#4a5a7a', '#6a5068', '#4d6170'][r.hue];
+    ctx.beginPath();
+    r.pts.forEach((k, i) => { const a = i / r.pts.length * Math.PI * 2; const x = Math.cos(a) * r.r * k, y = Math.sin(a) * r.r * k; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath(); ctx.fillStyle = base; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.arc(-r.r * .35, -r.r * .3, r.r * .18, 0, 7); ctx.arc(r.r * .4, r.r * .35, r.r * .12, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#fff'; ctx.font = `800 ${r.t.length > 5 ? 17 : r.t.length > 3 ? 20 : 24}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4; ctx.fillText(r.t, r.x, r.y + 1); ctx.shadowBlur = 0;
+  }
+  function heart(x, y, on) {
+    ctx.fillStyle = on ? '#ff5d73' : '#2c3047';
+    ctx.beginPath(); ctx.moveTo(x, y + 5); ctx.bezierCurveTo(x - 11, y - 3, x - 6, y - 12, x, y - 6); ctx.bezierCurveTo(x + 6, y - 12, x + 11, y - 3, x, y + 5); ctx.fill();
+  }
+  function text(t, x, y, size, color, weight = 800, align = 'center') {
+    ctx.font = `${weight} ${size}px system-ui, sans-serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y);
+  }
+  function wrap(t, x, y, size, color, maxW) {
+    ctx.font = `700 ${size}px system-ui, sans-serif`; const words = t.split(' '); let line = '', yy = y; const lines = [];
+    for (const w of words) { const test = line ? line + ' ' + w : w; if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; }
+    lines.push(line); lines.forEach((l, i) => text(l, x, yy + i * (size + 6), size, color, 700));
+  }
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - .5) * 14 * shake, (Math.random() - .5) * 14 * shake);
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b0d1f'); g.addColorStop(1, '#161a33');
+    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+    for (const s of stars) { ctx.globalAlpha = .4 + s.s / 3; ctx.fillStyle = '#c9d3ff'; ctx.fillRect(s.x, s.y, s.s, s.s); }
+    ctx.globalAlpha = 1;
+    // Ground shield line
+    ctx.strokeStyle = 'rgba(80,140,255,.35)'; ctx.lineWidth = 2; ctx.setLineDash([6, 8]); ctx.beginPath(); ctx.moveTo(0, H - 92); ctx.lineTo(W, H - 92); ctx.stroke(); ctx.setLineDash([]);
+    for (const r of rocks) rock(r);
+    for (const l of lasers) {
+      ctx.strokeStyle = l.good ? `rgba(120,220,255,${l.t / .14})` : `rgba(255,107,107,${l.t / .14})`; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${l.t / .14})`; ctx.lineWidth = 2; ctx.stroke();
+    }
+    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz); }
+    ctx.globalAlpha = 1;
+    // Ship
+    ctx.save(); ctx.translate(W / 2, H - 52); ctx.rotate(aim + Math.PI / 2);
+    ctx.fillStyle = '#2f6fd6'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(18, 14); ctx.lineTo(0, 6); ctx.lineTo(-18, 14); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffcc33'; ctx.beginPath(); ctx.arc(0, -6, 6, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.restore();
+
+    // HUD
+    ctx.fillStyle = 'rgba(11,13,31,.85)'; ctx.fillRect(0, 0, W, 86);
+    text('Score ' + score, 16, 22, 17, '#ecedf3', 800, 'left');
+    for (let i = 0; i < Math.max(3, lives); i++) heart(W - 24 - i * 26, 22, i < lives);
+    if (rule) {
+      text(rule.name, W / 2, 56, 26, '#ffcc33');
+      text(`Wave ${wave}`, 16, 56, 13, '#8f94b3', 700, 'left');
+      if (combo >= 3) text(`Combo ×${Math.min(1 + Math.floor(combo / 3), 5)}`, W - 16, 56, 14, '#3ecf8e', 800, 'right');
+      // wave progress
+      ctx.fillStyle = '#23283f'; ctx.fillRect(0, 82, W, 4); ctx.fillStyle = '#3ecf8e'; ctx.fillRect(0, 82, W * Math.max(0, hits) / PER_WAVE, 4);
+    }
+    for (const t of toasts) {
+      const a = Math.min(1, (t.big ? 2.2 : .9) - t.t);
+      ctx.globalAlpha = a;
+      if (t.big) wrap(t.text, t.x, t.y - t.t * 10, 17, t.color, W - 60); else text(t.text, t.x, t.y - t.t * 50, 18, t.color);
+      ctx.globalAlpha = 1;
+    }
+    if (state === 'play' && banner > 0) {
+      ctx.globalAlpha = Math.min(1, banner * 2);
+      ctx.fillStyle = 'rgba(11,13,31,.82)'; ctx.fillRect(0, H / 2 - 80, W, 150);
+      text(`Wave ${wave}`, W / 2, H / 2 - 42, 20, '#8f94b3');
+      text('Zap: ' + rule.name, W / 2, H / 2, 30, '#ffcc33');
+      text('Tap the numbers that fit. Let the others fall.', W / 2, H / 2 + 40, 15, '#c9cde0', 600);
+      ctx.globalAlpha = 1;
+    }
+    if (state === 'title' || state === 'over') {
+      ctx.fillStyle = 'rgba(11,13,31,.88)'; ctx.fillRect(0, 0, W, H);
+      if (state === 'title') {
+        text('Number Blaster', W / 2, 190, 42, '#ffcc33');
+        wrap('Numbers are falling from space. Each wave has a rule, like "Multiples of 6" or "Prime numbers".', W / 2, 260, 17, '#c9cde0', 380);
+        wrap('Click or tap the numbers that fit the rule to zap them. Let the others fall. Zapping a wrong number or missing a right one costs a heart.', W / 2, 340, 17, '#c9cde0', 380);
+        if (best) text('Best: ' + best, W / 2, 450, 17, '#8f94b3', 700);
+      } else {
+        text('Game over', W / 2, 210, 42, '#ffcc33');
+        text(String(score), W / 2, 290, 64, '#fff');
+        text(score >= best && score > 0 ? 'New best!' : 'Best: ' + best, W / 2, 350, 18, '#8f94b3', 700);
+        text(`You reached wave ${wave}`, W / 2, 385, 17, '#c9cde0', 600);
+      }
+      ctx.fillStyle = '#ffcc33'; roundRect(W / 2 - 100, 490, 200, 58, 14); ctx.fill();
+      text(state === 'title' ? 'Start' : 'Play again', W / 2, 519, 22, '#111');
+    }
+  }
+  function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  function frame(t) {
+    const dt = Math.min(.05, (t - last) / 1000 || 0); last = t;
+    update(dt); draw(); requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  // For automated testing.
+  window.__nb = { get state() { return state; }, get rocks() { return rocks; }, get rule() { return rule; }, get score() { return score; }, get lives() { return lives; }, get wave() { return wave; }, start, zap, makeRule, skip: () => { banner = 0; } };
+})();
+</script>
+</body>
+</html>

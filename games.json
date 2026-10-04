@@ -479,5 +479,57 @@
   "description": "Work with 2×2 matrices: determinants, matrix-vector and matrix-matrix products, matrices with no inverse, and matrices that rotate, reflect, and dilate the plane. Covers AP Precalculus topics 4.10–4.13.",
   "howto": "Click the right answer or press 1–4.",
   "source": "MathAdvice"
+ },
+ {
+  "slug": "gate-rush",
+  "title": "Gate Rush",
+  "category": "Arithmetic",
+  "thumb": "thumbs/gate-rush.jpg",
+  "embed": "games/gate-rush/index.html",
+  "width": 460,
+  "height": 700,
+  "mobile": true,
+  "description": "Steer your crowd down the road and pick a gate at every fork: +20, ×2, −15, or ÷3. Choose the one that leaves you with more, dodge red squads, and be bigger than the boss at the end. Levels get longer and the choices get trickier.",
+  "howto": "Drag left and right, or use the arrow keys or A and D. Space starts the next level.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "number-blaster",
+  "title": "Number Blaster",
+  "category": "Number Sense",
+  "thumb": "thumbs/number-blaster.jpg",
+  "embed": "games/number-blaster/index.html",
+  "width": 460,
+  "height": 700,
+  "mobile": true,
+  "description": "Numbers fall from space, and each wave has a rule: multiples of 6, prime numbers, factors of 36, fractions bigger than ½, and more. Zap the numbers that fit and let the rest fall. Build combos for bonus points.",
+  "howto": "Click or tap a falling number to zap it. Zapping a wrong number or missing a right one costs a heart.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "angle-shot",
+  "title": "Angle Shot",
+  "category": "Geometry",
+  "thumb": "thumbs/angle-shot.jpg",
+  "embed": "games/angle-shot/index.html",
+  "width": 800,
+  "height": 450,
+  "mobile": true,
+  "description": "Launch cannonballs over walls, under ceilings, and through gaps to hit every target. Read the protractor to set your angle and power. Wind and moving targets show up in later levels. 14 levels.",
+  "howto": "Drag from the cannon to aim, then let go to fire. Or use the arrow keys (up and down for angle, left and right for power) and press Space.",
+  "source": "MathAdvice"
+ },
+ {
+  "slug": "function-rider",
+  "title": "Function Rider",
+  "category": "Algebra",
+  "thumb": "thumbs/function-rider.jpg",
+  "embed": "games/function-rider/index.html",
+  "width": 800,
+  "height": 640,
+  "mobile": true,
+  "description": "Type an equation and a sled rides your graph from the start line to the flag. Grab the stars and steer around the red blocks using lines, parabolas, absolute value, sine waves, exponentials, and more. 15 levels.",
+  "howto": "Type an equation after y = and press Ride! or Enter. Use ^ for powers and things like sin(x), sqrt(x), and |x|.",
+  "source": "MathAdvice"
  }
 ]

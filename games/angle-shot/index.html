@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Angle Shot</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10182a; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { display: block; cursor: crosshair; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Angle Shot — a MathAdvice original.
+// Set the launch angle and power to hit every target. Walls, wind, and moving targets come later.
+(() => {
+  const W = 800, H = 450, GROUND = 400, CX = 70, CY = 382, G = 520, BALL = 7;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  let scale = 1;
+  function fit() {
+    const dpr = window.devicePixelRatio || 1;
+    scale = Math.min(innerWidth / W, innerHeight / H);
+    cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
+    cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  }
+  addEventListener('resize', fit); fit();
+  const KEY = 'ma-angleshot-level';
+  const getLevel = () => { try { return Math.max(1, +localStorage.getItem(KEY) || 1); } catch (e) { return 1; } };
+  const saveLevel = v => { try { localStorage.setItem(KEY, Math.max(v, getLevel())); } catch (e) {} };
+
+  // Levels: targets {x, y, r, bob}, walls [x, y, w, h], wind (px/s² to the right), and a tip.
+  const LEVELS = [
+    { t: [{ x: 430, y: GROUND - 18 }], tip: 'Drag to aim. The angle and power show at the top. Let go to fire.' },
+    { t: [{ x: 660, y: GROUND - 18 }], tip: 'Farther away: more power, or an angle closer to 45°.' },
+    { t: [{ x: 540, y: GROUND - 18 }], w: [[300, 280, 34, 120]], tip: 'Go over the wall.' },
+    { t: [{ x: 400, y: GROUND - 18 }], w: [[230, 170, 34, 230]], tip: 'A tall wall up close needs a steep angle, maybe 70° or more.' },
+    { t: [{ x: 600, y: 222 }], w: [[560, 240, 80, 160]], tip: 'The target is on top of a tower.' },
+    { t: [{ x: 360, y: GROUND - 18 }, { x: 690, y: GROUND - 18 }], tip: 'Two targets. Fun fact: with the same power, 30° and 60° land in almost the same spot. So do any two angles that add up to 90°.' },
+    { t: [{ x: 700, y: GROUND - 18 }], w: [[260, 0, 420, 200]], tip: 'A ceiling! Keep it low.' },
+    { t: [{ x: 600, y: GROUND - 18 }], wind: -90, tip: 'Wind is blowing against you. Watch the flag.' },
+    { t: [{ x: 620, y: 230, bob: 70 }], tip: 'This target moves up and down. Time your shot.' },
+    { t: [{ x: 520, y: 170 }, { x: 700, y: GROUND - 18 }], w: [[480, 190, 80, 210]], wind: 60, tip: 'A tailwind pushes your shots farther.' },
+    { t: [{ x: 300, y: GROUND - 18 }, { x: 470, y: 140, bob: 40 }, { x: 720, y: GROUND - 18 }], w: [[380, 250, 30, 150]], tip: 'Three targets, one moving.' },
+    { t: [{ x: 680, y: GROUND - 18 }], w: [[420, 0, 36, 210], [420, 290, 36, 110]], tip: 'Thread the gap in the wall.' },
+    { t: [{ x: 360, y: 110 }, { x: 660, y: 255, bob: 45 }], w: [[300, 130, 120, 24], [600, 330, 120, 70]], wind: -50, tip: 'Hard mode: wind, a high target, and a moving one.' },
+    { t: [{ x: 740, y: GROUND - 18 }, { x: 560, y: 90 }], w: [[200, 140, 30, 260], [470, 0, 30, 120], [470, 220, 30, 180]], wind: 40, tip: 'The final challenge.' },
+  ];
+
+  let state = 'title', level = getLevel(), L = null, targets = [], walls = [], wind = 0, angle = 45, power = 60, shots = 0, maxShots = 0;
+  let ball = null, trail = [], lastTrail = [], parts = [], toasts = [], time = 0, last = 0, aiming = false, endTimer = 0, keys = {};
+
+  function startLevel(n) {
+    level = Math.min(n, LEVELS.length); L = LEVELS[level - 1];
+    targets = L.t.map(t => ({ ...t, r: t.r || 18, hit: false, by: t.y }));
+    walls = (L.w || []).map(w => ({ x: w[0], y: w[1], w: w[2], h: w[3] }));
+    wind = L.wind || 0; shots = 0; maxShots = targets.length + 2; ball = null; trail = []; lastTrail = []; parts = []; toasts = [];
+    endTimer = 0; state = 'play';
+  }
+  const speed = () => 230 + power * 6.2;
+  function fire() {
+    if (state !== 'play' || ball || shots >= maxShots) return;
+    const a = angle * Math.PI / 180, v = speed();
+    ball = { x: CX + Math.cos(a) * 48, y: CY - Math.sin(a) * 48, vx: Math.cos(a) * v, vy: -Math.sin(a) * v, ang: angle };
+    shots++; trail = []; burst(ball.x, ball.y, '#ffd27a', 12);
+  }
+  function burst(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = 50 + Math.random() * 180; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: .7, c }); } }
+  function toast(t, x, y, c) { toasts.push({ t, x, y, c, age: 0 }); }
+
+  function endShot() {
+    lastTrail = trail; ball = null;
+    if (targets.every(t => t.hit)) { state = 'won'; saveLevel(level + 1); }
+    else if (shots >= maxShots) state = 'lost';
+  }
+  function hitsWall(x, y) { return walls.some(w => x > w.x - BALL && x < w.x + w.w + BALL && y > w.y - BALL && y < w.y + w.h + BALL); }
+
+  function update(dt) {
+    time += dt;
+    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; } parts = parts.filter(p => p.life > 0);
+    for (const t of toasts) t.age += dt; toasts = toasts.filter(t => t.age < 1.6);
+    for (const t of targets) if (t.bob) t.y = t.by + Math.sin(time * 1.6) * t.bob;
+    if (state !== 'play') return;
+    const ka = (keys.ArrowUp || keys.KeyW ? 1 : 0) - (keys.ArrowDown || keys.KeyS ? 1 : 0);
+    const kp = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
+    if (ka) angle = Math.max(1, Math.min(89, angle + ka * 30 * dt));
+    if (kp) power = Math.max(5, Math.min(100, power + kp * 40 * dt));
+    if (!ball) return;
+    // Small steps so fast shots don't skip through walls.
+    const steps = 6;
+    for (let i = 0; i < steps && ball; i++) {
+      const h = dt / steps;
+      ball.vx += wind * h; ball.vy += G * h; ball.x += ball.vx * h; ball.y += ball.vy * h;
+      for (const t of targets) if (!t.hit && Math.hypot(ball.x - t.x, ball.y - t.y) < t.r + BALL) {
+        t.hit = true; burst(t.x, t.y, '#ffcc33', 26); burst(t.x, t.y, '#ff5d73', 14); toast(`Hit at ${Math.round(ball.ang)}°!`, t.x, t.y - 34, '#ffcc33');
+      }
+      if (hitsWall(ball.x, ball.y)) { burst(ball.x, ball.y, '#c9b28a', 10); endShot(); break; }
+      if (ball.y > GROUND - BALL) { burst(ball.x, GROUND - 4, '#7a5a3a', 10); endShot(); break; }
+      if (ball.x > W + 40 || ball.x < -40) { endShot(); break; }
+    }
+    if (ball && (trail.length === 0 || Math.hypot(ball.x - trail[trail.length - 1][0], ball.y - trail[trail.length - 1][1]) > 9)) trail.push([ball.x, ball.y]);
+    if (ball && targets.every(t => t.hit)) { lastTrail = trail; ball = null; state = 'won'; saveLevel(level + 1); }
+  }
+
+  // ---- Input
+  const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]; };
+  function aimAt(x, y) {
+    const dx = x - CX, dy = CY - y;
+    angle = Math.max(1, Math.min(89, Math.atan2(Math.max(dy, 0.01), Math.max(dx, 0.01)) * 180 / Math.PI));
+    power = Math.max(5, Math.min(100, Math.hypot(dx, dy) / 5.2));
+  }
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault(); const [x, y] = pt(e);
+    if (state === 'title') { if (level > 1 && y > 330 && y < 370) startLevel(1); else startLevel(level); return; }
+    if (state === 'won') { if (level >= LEVELS.length) state = 'title', level = 1; else startLevel(level + 1); return; }
+    if (state === 'lost') { startLevel(level); return; }
+    if (ball) return;
+    aiming = true; aimAt(x, y);
+  });
+  cv.addEventListener('pointermove', e => { if (aiming) aimAt(...pt(e)); });
+  addEventListener('pointerup', () => { if (aiming) { aiming = false; fire(); } });
+  addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      if (state === 'play') fire();
+      else if (state === 'title') startLevel(level);
+      else if (state === 'won') { if (level < LEVELS.length) startLevel(level + 1); }
+      else startLevel(level);
+    }
+  });
+  addEventListener('keyup', e => keys[e.code] = false);
+
+  // ---- Drawing
+  function text(t, x, y, size, color, weight = 800, align = 'center') { ctx.font = `${weight} ${size}px system-ui, sans-serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y); }
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function wrapText(t, x, y, size, color, maxW) {
+    ctx.font = `600 ${size}px system-ui, sans-serif`; const words = t.split(' '); let line = ''; const lines = [];
+    for (const w of words) { const s = line ? line + ' ' + w : w; if (ctx.measureText(s).width > maxW && line) { lines.push(line); line = w; } else line = s; }
+    lines.push(line); lines.forEach((l, i) => text(l, x, y + i * (size + 6), size, color, 600));
+  }
+  function draw() {
+    const sky = ctx.createLinearGradient(0, 0, 0, GROUND); sky.addColorStop(0, '#7ec4f5'); sky.addColorStop(1, '#d9f0ff');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    // hills and clouds
+    ctx.fillStyle = '#a9dcb0'; ctx.beginPath(); ctx.moveTo(0, GROUND); for (let x = 0; x <= W; x += 20) ctx.lineTo(x, GROUND - 60 - Math.sin(x / 110) * 30 - Math.sin(x / 43) * 8); ctx.lineTo(W, GROUND); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (const [cx, cy, s] of [[180, 70, 1], [470, 50, .8], [690, 95, 1.1]]) { const x = (cx + time * 8 * s) % (W + 120) - 60; ctx.beginPath(); ctx.arc(x, cy, 22 * s, 0, 7); ctx.arc(x + 24 * s, cy - 10 * s, 26 * s, 0, 7); ctx.arc(x + 52 * s, cy, 20 * s, 0, 7); ctx.fill(); }
+    ctx.fillStyle = '#5aa05a'; ctx.fillRect(0, GROUND, W, H - GROUND); ctx.fillStyle = '#4b8a4b'; ctx.fillRect(0, GROUND, W, 6);
+
+    // walls
+    for (const w of walls) {
+      ctx.fillStyle = '#9b6b4a'; ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1;
+      for (let y = w.y; y < w.y + w.h; y += 14) { ctx.beginPath(); ctx.moveTo(w.x, y); ctx.lineTo(w.x + w.w, y); ctx.stroke(); for (let x = w.x + ((y - w.y) / 14 % 2 ? 9 : 0); x < w.x + w.w; x += 18) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, Math.min(y + 14, w.y + w.h)); ctx.stroke(); } }
+      ctx.strokeStyle = '#6e4a32'; ctx.lineWidth = 2; ctx.strokeRect(w.x, w.y, w.w, w.h);
+    }
+    // targets
+    for (const t of targets) {
+      if (t.hit) continue;
+      if (t.bob) { ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(t.x, t.by - t.bob); ctx.lineTo(t.x, t.by + t.bob); ctx.stroke(); ctx.setLineDash([]); }
+      [['#e8505b', 1], ['#fff', .72], ['#e8505b', .45], ['#fff', .2]].forEach(([c, k]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(t.x, t.y, t.r * k, 0, 7); ctx.fill(); });
+    }
+    // previous shot and current trail
+    ctx.fillStyle = 'rgba(40,60,90,.28)'; for (const [x, y] of lastTrail) { ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill(); }
+    ctx.fillStyle = 'rgba(40,60,90,.55)'; for (const [x, y] of trail) { ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill(); }
+
+    // protractor
+    ctx.strokeStyle = 'rgba(30,50,80,.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(CX, CY, 92, -Math.PI / 2, 0); ctx.stroke();
+    for (let d = 0; d <= 90; d += 5) {
+      const a = d * Math.PI / 180, r1 = d % 15 === 0 ? 80 : 86;
+      ctx.beginPath(); ctx.moveTo(CX + Math.cos(a) * r1, CY - Math.sin(a) * r1); ctx.lineTo(CX + Math.cos(a) * 92, CY - Math.sin(a) * 92); ctx.stroke();
+      if (d % 15 === 0) text(d + '°', CX + Math.cos(a) * 106, CY - Math.sin(a) * 106, 11, 'rgba(30,50,80,.75)', 700);
+    }
+    // short aiming guide (just the start of the path)
+    if (state === 'play' && !ball) {
+      const a = angle * Math.PI / 180, v = speed();
+      ctx.fillStyle = 'rgba(255,255,255,.95)';
+      for (let i = 1; i <= 6; i++) { const t = i * .035; const x = CX + Math.cos(a) * 48 + Math.cos(a) * v * t + .5 * wind * t * t, y = CY - Math.sin(a) * 48 - Math.sin(a) * v * t + .5 * G * t * t; ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fill(); }
+    }
+    // cannon
+    ctx.save(); ctx.translate(CX, CY); ctx.rotate(-angle * Math.PI / 180);
+    ctx.fillStyle = '#2b3a55'; rr(-6, -11, 56, 22, 8); ctx.fill(); ctx.fillStyle = '#3d5277'; rr(30, -13, 22, 26, 6); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#5b3d26'; ctx.beginPath(); ctx.arc(CX, CY + 2, 17, 0, 7); ctx.fill(); ctx.fillStyle = '#c99a5e'; ctx.beginPath(); ctx.arc(CX, CY + 2, 6, 0, 7); ctx.fill();
+    // ball
+    if (ball) { ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(ball.x - 2, ball.y - 2, 2.5, 0, 7); ctx.fill(); }
+    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / .7); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2.5, p.y - 2.5, 5, 5); }
+    ctx.globalAlpha = 1;
+    for (const t of toasts) { ctx.globalAlpha = Math.max(0, 1 - t.age / 1.6); text(t.t, t.x, t.y - t.age * 30, 20, '#1d2b48'); }
+    ctx.globalAlpha = 1;
+
+    // HUD
+    if (state !== 'title') {
+      ctx.fillStyle = 'rgba(16,24,42,.82)'; rr(10, 10, W - 20, 44, 12); ctx.fill();
+      text(`Level ${level}`, 26, 32, 18, '#fff', 800, 'left');
+      text(`Angle ${Math.round(angle)}°`, 260, 32, 20, '#ffcc33');
+      text(`Power ${Math.round(power)}`, 410, 32, 20, '#7dd3ff');
+      // shots left
+      for (let i = 0; i < maxShots; i++) { ctx.fillStyle = i < maxShots - shots ? '#fff' : 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(W - 30 - i * 20, 32, 7, 0, 7); ctx.fill(); }
+      text('Shots', W - 40 - maxShots * 20, 32, 14, '#9aa6c4', 700, 'right');
+      if (wind) {
+        const x = W - 82, dir = Math.sign(wind);
+        ctx.fillStyle = 'rgba(16,24,42,.7)'; rr(x - 66, 64, 132, 30, 10); ctx.fill();
+        text(`Wind ${dir > 0 ? '→' : '←'} ${Math.abs(wind) >= 80 ? 'strong' : 'light'}`, x, 80, 15, '#fff', 700);
+      }
+      if (L && shots === 0 && !ball) {
+        ctx.font = '600 15px system-ui, sans-serif'; const lines = []; let line = '';
+        for (const w of L.tip.split(' ')) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > 440 && line) { lines.push(line); line = w; } else line = t; } lines.push(line);
+        const bw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 30;
+        ctx.fillStyle = 'rgba(16,24,42,.72)'; rr(W / 2 - bw / 2, 64, bw, 14 + lines.length * 21, 10); ctx.fill();
+        lines.forEach((l, i) => text(l, W / 2, 81 + i * 21, 15, '#fff', 600));
+      }
+    }
+    if (state !== 'play') {
+      ctx.fillStyle = 'rgba(12,18,32,.84)'; ctx.fillRect(0, 0, W, H);
+      if (state === 'title') {
+        text('Angle Shot', W / 2, 110, 50, '#ffcc33');
+        wrapText('Drag from the cannon to set the angle and power, then let go to fire. Or use the arrow keys and press Space. Hit every target before you run out of shots.', W / 2, 175, 18, '#dfe5f5', 560);
+        button(level > 1 ? `Continue: level ${level}` : 'Start', W / 2, 290, 260);
+        if (level > 1) text('Start over at level 1', W / 2, 350, 15, '#8f9bb8', 700);
+      } else if (state === 'won') {
+        const stars = shots <= targets.length ? 3 : shots === targets.length + 1 ? 2 : 1;
+        text(level >= LEVELS.length ? 'You beat every level!' : `Level ${level} cleared!`, W / 2, 120, 40, '#ffcc33');
+        text('★'.repeat(stars) + '☆'.repeat(3 - stars), W / 2, 185, 44, '#ffcc33');
+        text(`${shots} shot${shots > 1 ? 's' : ''} for ${targets.length} target${targets.length > 1 ? 's' : ''}`, W / 2, 240, 18, '#dfe5f5', 700);
+        button(level >= LEVELS.length ? 'Back to start' : `Level ${level + 1}`, W / 2, 320, 220);
+      } else {
+        text('Out of shots', W / 2, 130, 42, '#ff8a8a');
+        wrapText('Tip: ' + L.tip, W / 2, 190, 16, '#dfe5f5', 560);
+        button('Try again', W / 2, 300, 220);
+      }
+    }
+  }
+  function button(t, x, y, w) { ctx.fillStyle = '#ffcc33'; rr(x - w / 2, y - 28, w, 56, 14); ctx.fill(); text(t, x, y + 1, 21, '#111'); }
+
+  function frame(t) { const dt = Math.min(.04, (t - last) / 1000 || 0); last = t; update(dt); draw(); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+  // For automated testing.
+  window.__as = { get state() { return state; }, get ball() { return ball; }, get targets() { return targets; }, get level() { return level; }, startLevel, set: (a, p) => { angle = a; power = p; }, fire, LEVELS };
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
   <url><loc>https://mathadvice.org/about.html</loc><lastmod>2026-10-03</lastmod><priority>0.6</priority></url>
   <url><loc>https://mathadvice.org/privacy.html</loc><lastmod>2026-10-03</lastmod><priority>0.3</priority></url>
   <url><loc>https://mathadvice.org/play/angle-guesser/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mathadvice.org/play/angle-shot/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/answer-rush/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/asymptote-alley/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/balance-the-equation/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
@@ -17,13 +18,16 @@
   <url><loc>https://mathadvice.org/play/factor-frenzy/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/fraction-pizza/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/function-machine/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mathadvice.org/play/function-rider/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/function-stack/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mathadvice.org/play/gate-rush/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/integer-clash/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/log-lab/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/make-the-number/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/marble-odds/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/matrix-mixer/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/metric-mania/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://mathadvice.org/play/number-blaster/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/number-line-ninja/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/number-snake/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
   <url><loc>https://mathadvice.org/play/order-up/</loc><lastmod>2026-10-03</lastmod><priority>0.8</priority></url>
