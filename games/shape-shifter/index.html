@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shape Shifter</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Shapes are sets of unit cells; cell [x, y] is the square from (x, y) to (x+1, y+1) in math coordinates.
+  const SH = {
+    L: [[0, 0], [1, 0], [0, 1], [0, 2]],
+    P: [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2]],
+    F: [[1, 0], [0, 1], [1, 1], [1, 2], [2, 2]],
+    Y: [[0, 0], [0, 1], [0, 2], [0, 3], [1, 2]],
+    N: [[0, 0], [0, 1], [1, 1], [1, 2], [1, 3]],
+  };
+  // Ops: T slide by (a,b) | R turn d degrees about (h,v) | FX flip over x=c | FY flip over y=c | FD flip over y=x | FA flip over y=-x
+  // sol builds the target; par is the true fewest moves (checked by a search in the test).
+  const LEVELS = [
+    { s: 'L', at: [-5, -4], tools: 'T', sol: [{ k: 'T', a: 7, b: 3 }], par: 1,
+      hint: 'Pick Slide, then click where the glowing corner should land.' },
+    { s: 'P', at: [-6, -2], tools: 'T', walls: [[-1, -6, 1, 9]], sol: [{ k: 'T', a: 0, b: 5 }, { k: 'T', a: 7, b: 0 }], par: 2,
+      hint: 'Walls block the path. Slide around them, one move at a time.' },
+    { s: 'L', at: [1, 1], tools: 'R+ R- R2', sol: [{ k: 'R', d: 90, h: 0, v: 0 }], par: 1,
+      hint: 'Turns spin the shape about the point you click. Try the origin (0, 0).' },
+    { s: 'Y', at: [-5, -4], tools: 'T R+ R- R2', sol: [{ k: 'R', d: -90, h: -1, v: 1 }], par: 1,
+      hint: 'One turn about the right point beats sliding. Which point stays still?' },
+    { s: 'F', at: [-5, 0], tools: 'FX FY', sol: [{ k: 'FX', c: 0 }], par: 1,
+      hint: 'Flips mirror the shape over a line. Try the y-axis (x = 0).' },
+    { s: 'F', at: [-6, 1], tools: 'FX FY', sol: [{ k: 'FX', c: -1 }, { k: 'FY', c: 0 }], par: 2,
+      hint: 'Flip over a vertical line, then a horizontal one.' },
+    { s: 'L', at: [1, -5], tools: 'T FD FA', sol: [{ k: 'FA' }, { k: 'T', a: 2, b: 7 }], par: 2,
+      hint: 'Flip over y = x swaps (x, y) into (y, x). Flip over y = −x makes it (−y, −x).' },
+    { s: 'P', at: [-6, -5], tools: 'T R+ R- R2 FX FY FD FA', walls: [[-3, -2, 7, 1]], sol: [{ k: 'R', d: -90, h: -5, v: -3 }, { k: 'R', d: -90, h: 4, v: -5 }], par: 2,
+      hint: 'Every tool is open now. Watch the wall!' },
+    { s: 'N', at: [-6, -5], tools: 'T R+ R- R2 FX FY FD FA', walls: [[-2, -6, 1, 7], [-2, 3, 1, 3]], sol: [{ k: 'R', d: -90, h: -2, v: -1 }, { k: 'FX', c: -1 }, { k: 'R', d: 90, h: 3, v: 5 }], par: 3,
+      hint: 'Lay the shape down to squeeze through the gap in the wall.' },
+    { s: 'Y', at: [-6, -5], tools: 'T R+ R- R2 FX FY FD FA', walls: [[-4, -3, 1, 9], [0, -6, 1, 8], [3, -2, 4, 1]], sol: [{ k: 'R', d: 90, h: -5, v: -3 }, { k: 'R', d: 180, h: 0, v: -4 }, { k: 'R', d: 180, h: 5, v: 0 }], par: 3,
+      hint: 'Two walls and a shelf. Plan the route before you move.' },
+  ];
+  const TOOLS = [
+    { id: 'T', label: 'Slide', sub: 'pick a point' },
+    { id: 'R+', label: 'Turn 90°', sub: 'counterclockwise' },
+    { id: 'R-', label: 'Turn 90°', sub: 'clockwise' },
+    { id: 'R2', label: 'Turn 180°', sub: 'about a point' },
+    { id: 'FX', label: 'Flip |', sub: 'over x = k' },
+    { id: 'FY', label: 'Flip —', sub: 'over y = k' },
+    { id: 'FD', label: 'Flip y = x', sub: 'instant' },
+    { id: 'FA', label: 'Flip y = −x', sub: 'instant' },
+  ];
+  const XMIN = -7, XMAX = 7, YMIN = -6, YMAX = 6, CELL = 34, GX = 24, GY = 82;
+  const sx = x => GX + (x - XMIN) * CELL, sy = y => GY + (YMAX - y) * CELL;
+  const PX = 516, PW = 268;
+  TOOLS.forEach((t, i) => Object.assign(t, { x: PX + (i % 2) * 136, y: 112 + Math.floor(i / 2) * 54, w: 128, h: 46, size: 15, color: '#4fd1ff' }));
+  const undoBtn = { x: PX, y: 334, w: 128, h: 40, label: 'Undo', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+  const resetBtn = { x: PX + 136, y: 334, w: 128, h: 40, label: 'Reset', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+  const menuBtn = { x: 676, y: 18, w: 108, h: 44, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  // ---------- transform math ----------
+  function mapPt(op, x, y) {
+    switch (op.k) {
+      case 'T': return [x + op.a, y + op.b];
+      case 'R': { const dx = x - op.h, dy = y - op.v; return op.d === 90 ? [op.h - dy, op.v + dx] : op.d === -90 ? [op.h + dy, op.v - dx] : [op.h - dx, op.v - dy]; }
+      case 'FX': return [2 * op.c - x, y];
+      case 'FY': return [x, 2 * op.c - y];
+      case 'FD': return [y, x];
+      case 'FA': return [-y, -x];
+    }
+  }
+  // Point partway (t from 0 to 1) through the move, for the animation and wall checks.
+  function animPt(op, x, y, t) {
+    const s = 1 - 2 * t;
+    switch (op.k) {
+      case 'T': return [x + op.a * t, y + op.b * t];
+      case 'R': { const a = op.d * Math.PI / 180 * t, dx = x - op.h, dy = y - op.v, co = Math.cos(a), si = Math.sin(a); return [op.h + dx * co - dy * si, op.v + dx * si + dy * co]; }
+      case 'FX': return [op.c + (x - op.c) * s, y];
+      case 'FY': return [x, op.c + (y - op.c) * s];
+      case 'FD': { const m = (x + y) / 2; return [m + (x - m) * s, m + (y - m) * s]; }
+      case 'FA': { const m = (x - y) / 2; return [m + (x - m) * s, -m + (y + m) * s]; }
+    }
+  }
+  function mapCells(op, cells) {
+    return cells.map(([x, y]) => { const a = mapPt(op, x, y), b = mapPt(op, x + 1, y + 1); return [Math.min(a[0], b[0]), Math.min(a[1], b[1])]; });
+  }
+  const key = cells => cells.map(c => c.join(',')).sort().join(';');
+  const inBounds = cells => cells.every(([x, y]) => x >= XMIN && x < XMAX && y >= YMIN && y < YMAX);
+  function overlap(A, B) { // separating axis test, convex polygons
+    for (const P of [A, B]) for (let i = 0; i < P.length; i++) {
+      const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length], nx = y1 - y2, ny = x2 - x1;
+      if (Math.abs(nx) + Math.abs(ny) < 1e-9) continue;
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const [x, y] of A) { const d = x * nx + y * ny; a0 = Math.min(a0, d); a1 = Math.max(a1, d); }
+      for (const [x, y] of B) { const d = x * nx + y * ny; b0 = Math.min(b0, d); b1 = Math.max(b1, d); }
+      if (a1 <= b0 || b1 <= a0) return false;
+    }
+    return true;
+  }
+  const E = 0.03, wallPolys = walls => walls.map(([x, y]) => [[x + E, y + E], [x + 1 - E, y + E], [x + 1 - E, y + 1 - E], [x + E, y + 1 - E]]);
+  // First t where the moving shape hits a wall, or 0 if the path is clear.
+  function sweep(op, cells, wp) {
+    if (!wp.length) return 0;
+    for (let i = 1; i <= 32; i++) {
+      const t = i / 32;
+      for (const [x, y] of cells) {
+        const q = [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]].map(([px, py]) => animPt(op, px, py, t));
+        for (const w of wp) if (overlap(q, w)) return t;
+      }
+    }
+    return 0;
+  }
+  function expandWalls(rects = []) {
+    const out = [];
+    for (const [x, y, w, h] of rects) for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) out.push([x + i, y + j]);
+    return out;
+  }
+
+  // ---------- notation ----------
+  const n = v => (v < 0 ? '−' + -v : '' + v);
+  const lin = (sgn, v, c) => (sgn < 0 ? '−' : '') + v + (c ? (c > 0 ? ' + ' + c : ' − ' + -c) : '');
+  const pt = (a, b) => `(${n(a)}, ${n(b)})`;
+  function describe(op) {
+    switch (op.k) {
+      case 'T': {
+        const words = [op.a ? `${op.a > 0 ? 'right' : 'left'} ${Math.abs(op.a)}` : '', op.b ? `${op.b > 0 ? 'up' : 'down'} ${Math.abs(op.b)}` : ''].filter(Boolean).join(', ');
+        return { name: `Translate ${words}`, short: `Slide ${pt(op.a, op.b)}`, rule: `(x, y) → (${lin(1, 'x', op.a)}, ${lin(1, 'y', op.b)})` };
+      }
+      case 'R': {
+        const { h, v, d } = op, about = h || v ? `about ${pt(h, v)}` : 'about the origin';
+        const rule = d === 90 ? `(${lin(-1, 'y', h + v)}, ${lin(1, 'x', v - h)})` : d === -90 ? `(${lin(1, 'y', h - v)}, ${lin(-1, 'x', h + v)})` : `(${lin(-1, 'x', 2 * h)}, ${lin(-1, 'y', 2 * v)})`;
+        const dir = d === 90 ? '90° counterclockwise' : d === -90 ? '90° clockwise' : '180°';
+        return { name: `Rotate ${dir} ${about}`, short: `Rotate ${d === 180 ? '180°' : d === 90 ? '90° CCW' : '90° CW'} ${h || v ? pt(h, v) : 'origin'}`, rule: '(x, y) → ' + rule };
+      }
+      case 'FX': return { name: op.c ? `Reflect over the line x = ${n(op.c)}` : 'Reflect over the y-axis', short: `Reflect x = ${n(op.c)}`, rule: `(x, y) → (${lin(-1, 'x', 2 * op.c)}, y)` };
+      case 'FY': return { name: op.c ? `Reflect over the line y = ${n(op.c)}` : 'Reflect over the x-axis', short: `Reflect y = ${n(op.c)}`, rule: `(x, y) → (x, ${lin(-1, 'y', 2 * op.c)})` };
+      case 'FD': return { name: 'Reflect over the line y = x', short: 'Reflect y = x', rule: '(x, y) → (y, x)' };
+      case 'FA': return { name: 'Reflect over the line y = −x', short: 'Reflect y = −x', rule: '(x, y) → (−y, −x)' };
+    }
+  }
+
+  // ---------- state ----------
+  let lv = 0, L, cells, anchor, target, tkey, wallCells, wp, hist, tool, hover, anim, solved, lastOp, preview;
+  let saved = [];
+
+  const K = MA.game({
+    slug: 'shape-shifter', title: 'Shape Shifter', accent: '#4fd1ff', accent2: '#ff6bd6', bg: ['#0b1230', '#1a0b2e'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play' || anim) return;
+      for (const t of TOOLS) if (K.hit(t, x, y)) return pickTool(t.id);
+      if (K.hit(undoBtn, x, y)) return undo();
+      if (K.hit(resetBtn, x, y)) return reset();
+      if (K.hit(menuBtn, x, y)) return menu();
+      setHover(x, y);
+    },
+    move(x, y) { if (K.state === 'play' && !anim && (K.ptr.down || K.ptr.active)) setHover(x, y); },
+    up(x, y) {
+      if (K.state !== 'play' || anim || !tool || !hover) return;
+      if (x >= GX && x <= sx(XMAX) && y >= GY && y <= sy(YMIN)) apply(opFor(tool, hover));
+    },
+    key(k, e) {
+      if (K.state !== 'play' || anim) return;
+      const i = '12345678'.indexOf(k);
+      if (i >= 0) return pickTool(TOOLS[i].id);
+      if (k === 'u' || k === 'U' || k === 'Backspace' || (k === 'z' && (e.ctrlKey || e.metaKey))) return undo();
+      if (k === 'r' || k === 'R') return reset();
+      if (k === 'Escape') { tool = null; return; }
+      const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[k];
+      if (d) { const h = hover || [0, 0]; hover = [K.clamp(h[0] + d[0], XMIN, XMAX), K.clamp(h[1] + d[1], YMIN, YMAX)]; preview = null; return; }
+      if ((k === 'Enter' || k === ' ') && tool && hover) apply(opFor(tool, hover));
+    },
+  });
+
+  saved = K.load('stars', []);
+  const totalStars = () => saved.reduce((a, b) => a + (b || 0), 0);
+  function menu() {
+    K.state = 'menu'; anim = null;
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Shape Shifter',
+      sub: 'Move the shape onto its dotted outline using slides, turns and flips. Fewest moves wins!',
+      how: ['Pick a tool, then click a point on the grid. A ghost shows where the shape will land.', '<b>Slide</b> moves the glowing corner to your point. <b>Turn</b> spins about your point. <b>Flip</b> mirrors over a line.', 'Match <b>par</b> for 3 stars. Walls block the path, so plan your route.'],
+      html: `<p class="ma-best">★ ${totalStars()} / ${LEVELS.length * 3}</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  function load(i) {
+    lv = i; L = LEVELS[i];
+    wallCells = expandWalls(L.walls); wp = wallPolys(wallCells);
+    const start = SH[L.s].map(([x, y]) => [x + L.at[0], y + L.at[1]]);
+    target = L.sol.reduce((c, op) => mapCells(op, c), start); tkey = key(target);
+    hist = [{ cells: start, anchor: [...L.at], op: null }];
+    tool = L.tools.split(' ')[0]; hover = null; anim = null; solved = false; preview = null;
+    restore();
+  }
+  function restore() { const h = hist[hist.length - 1]; cells = h.cells; anchor = h.anchor; lastOp = h.op; preview = null; }
+  const moves = () => hist.length - 1;
+  const limit = () => L.par + 3;
+  function reset() { if (moves()) { hist.length = 1; restore(); K.sfx.whoosh(); } }
+  function undo() { if (moves()) { hist.pop(); restore(); K.sfx.pop(); } }
+  function pickTool(id) {
+    if (!L.tools.split(' ').includes(id)) { K.sfx.bad(); K.float(PX + PW / 2, 420, 'Not in this level', '#ff5d73', 16); return; }
+    K.sfx.click();
+    if (id === 'FD' || id === 'FA') return apply({ k: id });
+    tool = id; preview = null;
+  }
+  function setHover(x, y) {
+    const gx = Math.round((x - GX) / CELL) + XMIN, gy = YMAX - Math.round((y - GY) / CELL);
+    const h = gx >= XMIN && gx <= XMAX && gy >= YMIN && gy <= YMAX ? [gx, gy] : null;
+    if (String(h) !== String(hover)) { hover = h; preview = null; if (h && tool) K.sfx.tick(); }
+  }
+  function opFor(t, [x, y]) {
+    if (t === 'T') return x === anchor[0] && y === anchor[1] ? null : { k: 'T', a: x - anchor[0], b: y - anchor[1] };
+    if (t[0] === 'R') return { k: 'R', d: t === 'R+' ? 90 : t === 'R-' ? -90 : 180, h: x, v: y };
+    if (t === 'FX') return { k: 'FX', c: x };
+    if (t === 'FY') return { k: 'FY', c: y };
+  }
+  function check(op) { // -> {to, ok, hit, off}
+    const to = mapCells(op, cells), off = !inBounds(to), hit = off ? 0 : sweep(op, cells, wp);
+    return { to, off, hit, ok: !off && !hit };
+  }
+  function apply(op) {
+    if (!op || anim || solved) return;
+    const r = check(op);
+    if (r.off) { K.sfx.bad(); K.shake(4); K.float(sx(0), GY + 30, 'That goes off the grid!', '#ff5d73', 18); return; }
+    K.sfx.whoosh();
+    anim = { op, t: 0, end: r.hit ? Math.max(0.05, r.hit - 0.04) : 1, back: false, to: r.to, blocked: !!r.hit };
+  }
+  function commit(op, to) {
+    hist.push({ cells: to, anchor: mapPt(op, ...anchor), op });
+    restore();
+    if (key(cells) === tkey) return win();
+    K.sfx.note(440 + moves() * 60, 0.08);
+    if (moves() >= limit()) lose();
+  }
+  function win() {
+    solved = true; K.state = 'over';
+    const m = moves(), st = m <= L.par ? 3 : m <= L.par + 1 ? 2 : 1;
+    if ((saved[lv] || 0) < st) { saved[lv] = st; K.save('stars', saved); K.save('best', totalStars()); }
+    const cx = target.reduce((a, c) => a + sx(c[0] + 0.5), 0) / target.length, cy = target.reduce((a, c) => a + sy(c[1] + 0.5), 0) / target.length;
+    K.burst(cx, cy, '#ffd34d', 40, 360, 5); K.burst(cx, cy, '#4fd1ff', 30, 260); K.flash('#ffd34d', 0.3);
+    K.float(cx, cy - 30, '★'.repeat(st), '#ffd34d', 34);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+      btns.push({ label: 'Retry', ghost: true, on: () => { K.state = 'play'; load(lv); } });
+      btns.push({ label: 'Levels', ghost: true, on: menu });
+      K.overlay({
+        kicker: `Level ${lv + 1}`, title: lv === LEVELS.length - 1 ? 'Master shifter!' : 'Perfect fit!', score: '★'.repeat(st) + '☆'.repeat(3 - st),
+        sub: `Done in <b>${m}</b> move${m > 1 ? 's' : ''}. Par is <b>${L.par}</b>.${st < 3 ? ' Can you match par?' : ''}`, buttons: btns,
+      });
+    }, 1100);
+  }
+  function lose() {
+    K.state = 'over'; K.sfx.lose(); K.shake(6);
+    setTimeout(() => K.overlay({
+      kicker: `Level ${lv + 1}`, title: 'Out of moves', sub: `You get ${limit()} moves here (par is ${L.par}). Try a different plan!`,
+      buttons: [{ label: 'Try again', on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu }],
+    }), 700);
+  }
+
+  function update(dt) {
+    if (!anim) return;
+    const sp = anim.op.k === 'T' ? 2.4 : 1.9;
+    if (!anim.back) {
+      anim.t = Math.min(anim.end, anim.t + dt * sp);
+      if (anim.t >= anim.end) {
+        if (anim.blocked) { anim.back = true; K.sfx.bad(); K.shake(7); K.float(sx(0), GY + 30, 'Blocked by a wall!', '#ff5d73', 18); }
+        else { const a = anim; anim = null; commit(a.op, a.to); }
+      }
+    } else {
+      anim.t -= dt * sp * 1.4;
+      if (anim.t <= 0) anim = null;
+    }
+  }
+
+  // ---------- drawing ----------
+  function shapePath(c, cs, f) {
+    const set = new Set(cs.map(p => p.join(','))), edges = [];
+    c.beginPath();
+    for (const [x, y] of cs) {
+      const q = [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]].map(([a, b]) => f(a, b));
+      q.forEach(([a, b], i) => (i ? c.lineTo(sx(a), sy(b)) : c.moveTo(sx(a), sy(b))));
+      c.closePath();
+      if (!set.has(`${x},${y - 1}`)) edges.push([q[0], q[1]]);
+      if (!set.has(`${x + 1},${y}`)) edges.push([q[1], q[2]]);
+      if (!set.has(`${x},${y + 1}`)) edges.push([q[2], q[3]]);
+      if (!set.has(`${x - 1},${y}`)) edges.push([q[3], q[0]]);
+    }
+    return edges;
+  }
+  function strokeEdges(c, edges) {
+    c.beginPath();
+    for (const [[a, b], [d, e]] of edges) { c.moveTo(sx(a), sy(b)); c.lineTo(sx(d), sy(e)); }
+  }
+  function drawShape(c, cs, f, o = {}) {
+    c.save();
+    c.globalAlpha = o.alpha ?? 1;
+    const edges = shapePath(c, cs, f);
+    c.fillStyle = o.fill; c.fill();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    strokeEdges(c, edges);
+    if (o.dash) c.setLineDash(o.dash);
+    c.lineDashOffset = o.dashOff || 0;
+    c.strokeStyle = o.stroke; c.lineWidth = o.lw || 3; c.shadowColor = o.stroke; c.shadowBlur = o.glow ?? 14;
+    c.stroke();
+    c.restore();
+  }
+  const ease = t => t * t * (3 - 2 * t);
+
+  function draw(c, t) {
+    // grid board
+    c.save(); c.shadowColor = '#4fd1ff'; c.shadowBlur = 24;
+    K.rr(c, GX - 8, GY - 8, (XMAX - XMIN) * CELL + 16, (YMAX - YMIN) * CELL + 16, 14); c.fillStyle = 'rgba(8,12,30,.85)'; c.fill(); c.restore();
+    c.lineWidth = 1;
+    for (let x = XMIN; x <= XMAX; x++) { c.strokeStyle = x === 0 ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.09)'; c.beginPath(); c.moveTo(sx(x), sy(YMAX)); c.lineTo(sx(x), sy(YMIN)); c.stroke(); }
+    for (let y = YMIN; y <= YMAX; y++) { c.strokeStyle = y === 0 ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.09)'; c.beginPath(); c.moveTo(sx(XMIN), sy(y)); c.lineTo(sx(XMAX), sy(y)); c.stroke(); }
+    for (let x = XMIN + 1; x < XMAX; x++) if (x && x % 2 === 0) K.text(n(x), sx(x), sy(0) + 10, 9, 'rgba(220,228,250,.5)', { weight: 600 });
+    for (let y = YMIN + 1; y < YMAX; y++) if (y && y % 2 === 0) K.text(n(y), sx(0) - 9, sy(y), 9, 'rgba(220,228,250,.5)', { weight: 600 });
+    K.text('x', sx(XMAX) - 8, sy(0) - 9, 12, 'rgba(255,255,255,.7)'); K.text('y', sx(0) + 9, sy(YMAX) + 9, 12, 'rgba(255,255,255,.7)');
+
+    if (!L) { // menu backdrop
+      drawShape(c, SH.F.map(([x, y]) => [x + 2, y + 1]), (x, y) => [x, y], { fill: 'rgba(255,211,77,.08)', stroke: '#ffd34d', dash: [6, 6], lw: 2 });
+      drawShape(c, SH.F.map(([x, y]) => [x - 5, y - 3]), (x, y) => [x, y], { fill: 'rgba(79,209,255,.35)', stroke: '#4fd1ff' });
+      return;
+    }
+    // walls
+    for (const [x, y] of wallCells) K.tile(c, sx(x) + 1, sy(y + 1) + 1, CELL - 2, CELL - 6, '#5a6182', { r: 5, depth: 4 });
+    // target
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    drawShape(c, target, (x, y) => [x, y], { fill: `rgba(255,211,77,${0.07 + 0.07 * pulse})`, stroke: '#ffd34d', dash: [6, 6], dashOff: -t * 14, lw: 2.5, glow: 8 + 8 * pulse });
+
+    // tool preview
+    const busy = anim || K.state !== 'play';
+    if (!busy && tool && hover) {
+      const op = opFor(tool, hover);
+      if (op) {
+        if (!preview) preview = check(op);
+        const bad = !preview.ok, col = bad ? '#ff5d73' : '#ff6bd6';
+        drawShape(c, preview.to, (x, y) => [x, y], { fill: bad ? 'rgba(255,93,115,.18)' : 'rgba(255,107,214,.16)', stroke: col, lw: 2, glow: 6, alpha: 0.85, dash: [3, 4] });
+        drawGuide(c, op, col, t);
+      }
+      c.save(); c.strokeStyle = '#fff'; c.lineWidth = 2; c.shadowColor = '#ff6bd6'; c.shadowBlur = 10;
+      c.beginPath(); c.arc(sx(hover[0]), sy(hover[1]), 6, 0, 7); c.stroke(); c.restore();
+    }
+
+    // the shape
+    const f = anim ? (x, y) => animPt(anim.op, x, y, ease(anim.t)) : (x, y) => [x, y];
+    const match = solved;
+    drawShape(c, cells, f, { fill: match ? 'rgba(255,211,77,.55)' : 'rgba(79,209,255,.38)', stroke: match ? '#ffd34d' : '#4fd1ff', lw: 3.5 });
+    if (anim) drawGuide(c, anim.op, '#ff6bd6', t);
+    const [ax, ay] = f(...anchor);
+    if (tool === 'T' || anim?.op.k === 'T') K.orb(c, sx(ax), sy(ay), 6 + pulse * 1.5, '#ff6bd6');
+    else K.orb(c, sx(ax), sy(ay), 3.5, '#ff6bd6', { glow: 6 });
+
+    drawHud(c);
+  }
+
+  function drawGuide(c, op, col, t) {
+    c.save(); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2; c.shadowColor = col; c.shadowBlur = 10;
+    if (op.k === 'T') {
+      const [x1, y1] = [sx(anchor[0]), sy(anchor[1])], [x2, y2] = [sx(anchor[0] + op.a), sy(anchor[1] + op.b)], a = Math.atan2(y2 - y1, x2 - x1);
+      c.setLineDash([8, 6]); c.lineDashOffset = -t * 20; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
+      c.beginPath(); c.moveTo(x2, y2); c.lineTo(x2 - 12 * Math.cos(a - 0.4), y2 - 12 * Math.sin(a - 0.4)); c.lineTo(x2 - 12 * Math.cos(a + 0.4), y2 - 12 * Math.sin(a + 0.4)); c.closePath(); c.fill();
+    } else if (op.k === 'R') {
+      const x = sx(op.h), y = sy(op.v), a0 = t * 2, sweepA = -op.d * Math.PI / 180;
+      c.beginPath(); c.arc(x, y, 18, a0, a0 + sweepA, sweepA < 0); c.stroke();
+      const ae = a0 + sweepA, ex = x + 18 * Math.cos(ae), ey = y + 18 * Math.sin(ae), dir = ae + (sweepA < 0 ? -Math.PI / 2 : Math.PI / 2);
+      c.beginPath(); c.moveTo(ex + 7 * Math.cos(dir), ey + 7 * Math.sin(dir)); c.lineTo(ex + 6 * Math.cos(dir + 2.2), ey + 6 * Math.sin(dir + 2.2)); c.lineTo(ex + 6 * Math.cos(dir - 2.2), ey + 6 * Math.sin(dir - 2.2)); c.closePath(); c.fill();
+      c.beginPath(); c.arc(x, y, 4, 0, 7); c.fill();
+    } else {
+      const lines = { FX: [[op.c, YMIN], [op.c, YMAX]], FY: [[XMIN, op.c], [XMAX, op.c]], FD: [[-6, -6], [6, 6]], FA: [[-6, 6], [6, -6]] }[op.k];
+      c.setLineDash([10, 6]); c.lineDashOffset = -t * 20; c.lineWidth = 2.5;
+      c.beginPath(); c.moveTo(sx(lines[0][0]), sy(lines[0][1])); c.lineTo(sx(lines[1][0]), sy(lines[1][1])); c.stroke();
+    }
+    c.restore();
+  }
+
+  function drawHud(c) {
+    const m = moves(), left = limit() - m;
+    K.chip(24, 14, 'Level', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 96, h: 52 });
+    K.chip(128, 14, 'Moves', m, m > L.par ? '#ff9f43' : '#fff', { w: 90, h: 52 });
+    K.chip(226, 14, 'Par', L.par, '#ffd34d', { w: 80, h: 52 });
+    K.chip(314, 14, 'Moves left', left, left <= 1 ? '#ff5d73' : '#7ee36b', { w: 100, h: 52 });
+    const st = m <= L.par ? 3 : m <= L.par + 1 ? 2 : 1;
+    K.panel(c, 422, 14, 100, 52, { r: 12 });
+    K.text('STARS', 472, 28, 10, 'rgba(210,218,245,.65)');
+    K.text('★'.repeat(st) + '☆'.repeat(3 - st), 472, 47, 18, '#ffd34d', { weight: 800, glow: 10 });
+    K.button(menuBtn);
+
+    // tools
+    K.text('TOOLS  (keys 1–8)', PX + PW / 2, 96, 11, 'rgba(220,228,250,.7)');
+    const allowed = L.tools.split(' ');
+    for (const tb of TOOLS) {
+      const on = allowed.includes(tb.id);
+      K.button(Object.assign({}, tb, { disabled: !on, color: tool === tb.id ? '#ffd34d' : tb.color, glow: tool === tb.id ? 18 : 0 }));
+    }
+    K.button(Object.assign({}, undoBtn, { disabled: !m }));
+    K.button(Object.assign({}, resetBtn, { disabled: !m }));
+
+    // move log
+    K.panel(c, PX, 386, PW, 200, { r: 14 });
+    K.text('MOVES', PX + PW / 2, 402, 10, 'rgba(210,218,245,.65)');
+    const ops = hist.slice(1).map(h => h.op);
+    if (!ops.length) wrap(c, L.hint, PX + PW / 2, 440, PW - 30, 14, 'rgba(230,236,252,.85)');
+    ops.slice(-5).forEach((op, i, arr) => {
+      const d = describe(op), y = 426 + i * 33, num = ops.length - arr.length + i + 1;
+      K.text(`${num}. ${d.short}`, PX + 14, y, 12.5, '#fff', { align: 'left', weight: 700 });
+      K.text(d.rule, PX + 26, y + 15, 11, '#9fe6ff', { align: 'left', weight: 500 });
+    });
+
+    // big notation of the current / last move
+    K.panel(c, GX - 8, 520, (XMAX - XMIN) * CELL + 16, 68, { r: 14, glow: anim ? 14 : 0, glowColor: 'rgba(255,107,214,.5)' });
+    const shown = anim ? anim.op : (!busyHover() && tool && hover ? opFor(tool, hover) : null) || lastOp;
+    const cx = GX + (XMAX - XMIN) * CELL / 2;
+    if (shown) {
+      const d = describe(shown);
+      K.text(d.name, cx, 542, 16, '#fff', { weight: 700 });
+      K.text(d.rule, cx, 567, 18, '#ff9be6', { weight: 800, glow: 8 });
+    } else K.text('Pick a tool, then click a grid point.', cx, 554, 15, 'rgba(220,228,250,.7)', { weight: 600 });
+  }
+  const busyHover = () => anim || K.state !== 'play';
+  function wrap(c, s, x, y, w, size, col) {
+    c.font = K.font(size, 600);
+    const words = s.split(' '); let line = '', yy = y;
+    for (const wd of words) {
+      const t = line ? line + ' ' + wd : wd;
+      if (c.measureText(t).width > w && line) { K.text(line, x, yy, size, col, { weight: 600 }); line = wd; yy += size * 1.5; } else line = t;
+    }
+    K.text(line, x, yy, size, col, { weight: 600 });
+  }
+
+  // test hooks
+  window.__ss = { K, LEVELS, SH, TOOLS, mapCells, sweep, expandWalls, wallPolys, key, inBounds, load, apply, describe, get: () => ({ lv, cells, moves: moves(), solved, anim: !!anim, state: K.state }) };
+})();
+</script>
+</body>
+</html>
