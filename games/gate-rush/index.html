@@ -4,37 +4,41 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Gate Rush</title>
-<style>
-  html, body { margin: 0; height: 100%; background: #0f1a12; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  canvas { display: block; }
-</style>
+<script src="../_kit/kit.js"></script>
 </head>
 <body>
-<canvas id="c"></canvas>
 <script>
 // Gate Rush — a MathAdvice original.
 // Steer your crowd through math gates, dodge enemy squads, and be bigger than the boss at the end.
 (() => {
-  const W = 460, H = 700, ROAD_L = 40, ROAD_R = 420, MID = 230, PY = H - 150;
-  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-  let scale = 1;
-  function fit() {
-    const dpr = window.devicePixelRatio || 1;
-    scale = Math.min(innerWidth / W, innerHeight / H);
-    cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px';
-    cv.width = Math.round(W * scale * dpr); cv.height = Math.round(H * scale * dpr);
-    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
-  }
-  addEventListener('resize', fit); fit();
+  const W = 460, H = 700, ROAD_L = 40, ROAD_R = 420, MID = 230, PY = H - 160;
+  const GOOD = '#4fd1ff', BAD = '#ff5d73', GOLD = '#ffd34d';
 
-  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-  const pick = a => a[Math.floor(Math.random() * a.length)];
-  const KEY = 'ma-gaterush-level';
-  const getLevel = () => { try { return Math.max(1, +localStorage.getItem(KEY) || 1); } catch (e) { return 1; } };
-  const saveLevel = v => { try { localStorage.setItem(KEY, Math.max(v, getLevel())); } catch (e) {} };
+  const K = window.K = MA.game({
+    slug: 'gate-rush', title: 'Gate Rush', w: W, h: H, accent: GOLD, accent2: GOOD, bg: ['#0a1630', '#120a2a'],
+    tagline: 'Steer your crowd through math gates and be bigger than the boss.',
+    how: [
+      'Drag or use ← → to steer.',
+      'Each gate changes your number: +, −, × or ÷.',
+      'Pick the gate that leaves you with more.',
+      'Dodge red squads when you can.',
+      'Beat the boss by being bigger than its number.',
+    ],
+    update, draw, idle,
+    down(x) { if (K.state === 'play') { dragging = true; targetX = x; } },
+    move(x) { if (dragging) targetX = x; },
+    up() { dragging = false; },
+    key(k) { if (K.state === 'play' && ['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D'].includes(k)) dragging = false; },
+    noMenu: true,
+  });
+
+  // Level progress (also picks up the old save key from before the kit).
+  let saved = K.load('level', 0);
+  if (!saved) { try { saved = Math.max(1, +localStorage.getItem('ma-gaterush-level') || 1); } catch (e) { saved = 1; } }
+  const saveLevel = v => { saved = Math.max(saved, v); K.save('level', saved); };
 
   // ---- Gate math
+  const rnd = K.ri, pick = K.pick;
   const apply = (op, n) => op.t === '+' ? n + op.v : op.t === '-' ? n - op.v : op.t === 'x' ? n * op.v : Math.floor(n / op.v);
   const label = op => ({ '+': '+', '-': '−', 'x': '×', '/': '÷' })[op.t] + op.v;
   const good = op => op.t === '+' || op.t === 'x';
@@ -79,65 +83,71 @@
   }
 
   // ---- State
-  let state = 'title', level = getLevel(), lv = null, crowd = 0, dist = 0, speed = 190, px = MID, targetX = MID, keys = {};
-  let parts = [], toasts = [], shake = 0, stripe = 0, last = 0, endT = 0, bossFight = null, result = null;
-  const dots = [];
+  let level = saved, lv = null, crowd = 0, shown = 0, dist = 0, speed = 190, px = MID, targetX = MID, dragging = false;
+  let stripe = 0, bossFight = null, hitT = 0;
+
+  function menu() {
+    K.state = 'menu';
+    const go = L => () => startLevel(L);
+    K.menu({
+      html: saved > 1 ? `<p class="ma-best">Reached level <b>${saved}</b></p>` : '',
+      buttons: saved > 1 ? [{ label: `Continue: level ${saved}`, on: go(saved) }, { label: 'Level 1', ghost: true, on: go(1) }] : [{ label: 'Play', on: go(1) }],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
 
   function startLevel(L) {
-    level = L; lv = buildLevel(L); crowd = lv.start; dist = 0; speed = 185 + Math.min(L, 10) * 6;
-    px = targetX = MID; parts = []; toasts = []; bossFight = null; result = null; state = 'play';
+    level = L; lv = buildLevel(L); crowd = shown = lv.start; dist = 0; speed = 185 + Math.min(L, 10) * 6;
+    px = targetX = MID; bossFight = null; dragging = false; K.state = 'play';
   }
-  function burst(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = 60 + Math.random() * 200; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .6, c }); } }
-  function toast(text, x, y, color, size = 22) { toasts.push({ text, x, y, color, size, t: 0 }); }
 
-  // ---- Input: drag anywhere to steer, or use the arrow keys / A and D.
-  const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]; };
-  let dragging = false;
-  cv.addEventListener('pointerdown', e => {
-    e.preventDefault(); const [x, y] = pt(e);
-    if (state === 'title') {
-      if (level > 1 && y > 522 && y < 572) startLevel(1);
-      else if (y > 440) startLevel(level);
-      return;
+  function finish(won) {
+    K.state = 'over';
+    if (won) {
+      saveLevel(level + 1);
+      const most = Math.max(1, lv.best - lv.boss), stars = crowd / most >= .95 ? 3 : crowd / most >= .7 ? 2 : 1;
+      K.burst(MID, PY - 140, GOLD, 50, 340, 5); K.flash(GOLD, .3); K.sfx.win();
+      setTimeout(() => K.overlay({
+        kicker: `Level ${level}`, title: 'Cleared!',
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:${GOLD};text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(stars)}<span style="opacity:.2">${'★'.repeat(3 - stars)}</span></div>`
+          + `<p class="ma-sub">You had <b>${crowd}</b> left after the boss.<br>The best path ends with <b>${most}</b>.</p>`,
+        buttons: [{ label: `Level ${level + 1}`, on: () => startLevel(level + 1) }, { label: 'Menu', ghost: true, on: menu }],
+      }), 900);
+    } else {
+      const reason = bossFight ? `The boss had <b>${lv.boss}</b>. You needed more than that.` : 'Your crowd ran out.';
+      K.shake(12); K.sfx.lose();
+      setTimeout(() => K.overlay({
+        kicker: `Level ${level}`, title: 'Not enough!',
+        sub: `${reason}<br>The best path had <b>${lv.best}</b> before the boss.`,
+        buttons: [{ label: 'Try again', on: () => startLevel(level) }, { label: 'Menu', ghost: true, on: menu }],
+      }), 800);
     }
-    if (state === 'won' || state === 'lost') { if (y > 440) startLevel(state === 'won' ? level + 1 : level); return; }
-    dragging = true; targetX = x;
-  });
-  cv.addEventListener('pointermove', e => { if (dragging) targetX = pt(e)[0]; });
-  addEventListener('pointerup', () => dragging = false);
-  addEventListener('keydown', e => {
-    keys[e.code] = true;
-    if (e.code === 'Space' || e.code === 'Enter') {
-      e.preventDefault();
-      if (state === 'title') startLevel(level);
-      else if (state === 'won') startLevel(level + 1);
-      else if (state === 'lost') startLevel(level);
-    }
-  });
-  addEventListener('keyup', e => keys[e.code] = false);
+  }
+
+  function idle(dt) { stripe = (stripe + 60 * dt) % 60; shown += (crowd - shown) * Math.min(1, dt * 10); }
 
   function update(dt) {
-    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .94; p.vy *= .94; p.life -= dt; }
-    parts = parts.filter(p => p.life > 0);
-    for (const t of toasts) t.t += dt; toasts = toasts.filter(t => t.t < 1.2);
-    shake = Math.max(0, shake - dt);
-    if (state !== 'play') return;
-
-    const kx = (keys.ArrowLeft || keys.KeyA ? -1 : 0) + (keys.ArrowRight || keys.KeyD ? 1 : 0);
-    if (kx) { targetX += kx * 420 * dt; dragging = false; }
-    targetX = Math.max(ROAD_L + 30, Math.min(ROAD_R - 30, targetX));
+    shown += (crowd - shown) * Math.min(1, dt * 10);
+    hitT = Math.max(0, hitT - dt);
+    const kx = (K.keys.ArrowLeft || K.keys.a || K.keys.A ? -1 : 0) + (K.keys.ArrowRight || K.keys.d || K.keys.D ? 1 : 0);
+    if (kx) targetX += kx * 420 * dt;
+    const edge = K.clamp(Math.sqrt(Math.min(crowd, 90)) * 8.2, 34, 70); // keep a big crowd on the road
+    targetX = K.clamp(targetX, ROAD_L + edge, ROAD_R - edge);
     px += (targetX - px) * Math.min(1, dt * 12);
 
     if (bossFight) {
       // Crowd and boss trade units until one runs out.
       bossFight.t += dt;
-      const step = Math.max(1, Math.ceil(Math.min(crowd, bossFight.n) / 25));
       if (bossFight.t > .05) {
         bossFight.t = 0;
-        const k = Math.min(step, crowd, bossFight.n);
-        crowd -= k; bossFight.n -= k; burst(px + rnd(-20, 20), PY - 70, '#ff6b6b', 3);
-        if (bossFight.n <= 0 && crowd > 0) { state = 'won'; saveLevel(level + 1); result = { left: crowd }; burst(W / 2, PY - 120, '#ffcc33', 50); }
-        else if (crowd <= 0) { state = 'lost'; result = { reason: `The boss had ${lv.boss}. You needed more than that.` }; shake = .5; }
+        const k = Math.min(Math.max(1, Math.ceil(Math.min(crowd, bossFight.n) / 25)), crowd, bossFight.n);
+        crowd -= k; bossFight.n -= k;
+        K.burst(K.lerp(px, MID, .5) + rnd(-30, 30), PY - 70 + rnd(-10, 10), K.pick([GOOD, BAD]), 4, 160, 3, false);
+        if (Math.random() < .5) K.sfx.tick();
+        K.shake(2);
+        if (bossFight.n <= 0 && crowd > 0) { bossFight.dead = true; finish(true); }
+        else if (crowd <= 0) finish(false);
       }
       return;
     }
@@ -151,127 +161,164 @@
         const op = it.ops[lane], before = crowd;
         crowd = Math.max(0, apply(op, crowd));
         it.chosen = lane;
-        toast(`${label(op)} → ${crowd}`, px, PY - 90, good(op) ? '#7dffb0' : '#ff8a8a');
-        burst(px, PY - 30, good(op) ? '#7dffb0' : '#ff8a8a', 14);
-        if (crowd < before) shake = .2;
+        const ok = crowd >= before, col = ok ? '#7ee36b' : BAD;
+        K.float(K.clamp(px, 90, W - 90), PY - 100, `${label(op)} → ${crowd}`, col, 24);
+        K.burst(px, PY - 30, good(op) ? GOOD : BAD, 18, 240, 4);
+        if (ok) K.sfx.good(); else { K.sfx.bad(); K.shake(6); hitT = .3; }
       } else if (it.kind === 'squad') {
         const sx = it.lane < 0 ? MID : it.lane === 0 ? (ROAD_L + MID) / 2 : (MID + ROAD_R) / 2;
         if (it.lane < 0 || Math.abs(px - sx) < 80) {
-          crowd = Math.max(0, crowd - it.n); toast(`−${it.n} → ${crowd}`, px, PY - 90, '#ff8a8a'); burst(px, PY - 40, '#ff6b6b', 22); shake = .3;
-        } else toast('Dodged!', sx, PY - 60, '#7dffb0', 18);
+          crowd = Math.max(0, crowd - it.n);
+          K.float(K.clamp(px, 90, W - 90), PY - 100, `−${it.n} → ${crowd}`, BAD, 24); K.burst(px, PY - 40, BAD, 26, 280, 4);
+          K.sfx.boom(); K.shake(9); K.flash(BAD, .2); hitT = .4;
+        } else { it.dodged = true; K.float(sx, PY - 60, 'Dodged!', '#7ee36b', 20); K.sfx.whoosh(); }
       } else if (it.kind === 'boss') {
-        bossFight = { n: it.n, t: 0 };
+        bossFight = { n: it.n, t: 0 }; K.sfx.boom(); K.shake(8);
       }
-      if (crowd <= 0 && state === 'play' && !bossFight) { state = 'lost'; result = { reason: 'Your crowd ran out.' }; shake = .5; }
+      if (crowd <= 0 && !bossFight) return finish(false);
     }
   }
 
   // ---- Drawing
-  function text(t, x, y, size, color, weight = 800, align = 'center') { ctx.font = `${weight} ${size}px system-ui, sans-serif`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y); }
-  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
   const sy = wy => PY - (wy - dist);
-  function people(cx, cy, n, color, maxShown = 90) {
-    const m = Math.min(n, maxShown), R = 5.5;
+  // Glossy little people, pre-rendered once per color so a big crowd stays cheap.
+  const sprite = col => {
+    const c = document.createElement('canvas'), s = 3, g = c.getContext('2d');
+    c.width = c.height = 16 * s; g.scale(s, s);
+    const rg = g.createRadialGradient(6, 5, 1, 8, 8, 6.5);
+    rg.addColorStop(0, K.shade(col, .7)); rg.addColorStop(.5, col); rg.addColorStop(1, K.shade(col, -.4));
+    g.fillStyle = rg; g.beginPath(); g.arc(8, 8, 6, 0, 7); g.fill();
+    return c;
+  };
+  const SPR = { [GOOD]: sprite(GOOD), [BAD]: sprite(BAD) };
+  function people(c, cx, cy, n, color, maxShown, t) {
+    const m = Math.min(Math.round(n), maxShown), spread = Math.sqrt(m) * 8.2;
+    // one soft glow under the whole group
+    const rg = c.createRadialGradient(cx, cy, 0, cx, cy, spread + 26);
+    rg.addColorStop(0, K.alpha(color, .32)); rg.addColorStop(1, K.alpha(color, 0));
+    c.fillStyle = rg; c.beginPath(); c.ellipse(cx, cy, spread + 26, (spread + 26) * .75, 0, 0, 7); c.fill();
     for (let i = 0; i < m; i++) {
       const a = i * 2.39996, d = Math.sqrt(i) * 8.2;
-      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * .7;
-      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 6, R, 2.5, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y - 3, R, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(x - 1.5, y - 5, 1.8, 0, 7); ctx.fill();
+      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * .7 + Math.sin(t * 14 + i * 1.7) * 1.3;
+      c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(x, y + 6, 5, 2.2, 0, 0, 7); c.fill();
+      c.drawImage(SPR[color], x - 8, y - 11, 16, 16);
     }
-    return Math.sqrt(m) * 8.2;
+    return spread;
   }
-  function badge(t, x, y, bg) {
-    ctx.font = '800 20px system-ui, sans-serif'; const w = Math.max(44, ctx.measureText(t).width + 22);
-    ctx.fillStyle = bg; rr(x - w / 2, y - 16, w, 32, 16); ctx.fill(); text(t, x, y + 1, 20, '#fff');
+  function pill(c, t, x, y, color, size = 20) {
+    c.font = K.font(size, 800);
+    const w = Math.max(46, c.measureText(t).width + 26), h = size + 14;
+    K.tile(c, x - w / 2, y - h / 2, w, h, color, { r: h / 2, depth: 3, glow: 16 });
+    K.text(t, x, y + 1, size, '#0b0e1c', { weight: 800, c });
   }
 
-  function draw() {
-    ctx.save();
-    if (shake > 0) ctx.translate((Math.random() - .5) * 16 * shake, (Math.random() - .5) * 16 * shake);
-    // grass + road
-    ctx.fillStyle = '#3f8f4a'; ctx.fillRect(-20, -20, W + 40, H + 40);
-    ctx.fillStyle = '#367d40'; for (let y = -60 + (stripe * 2 % 120); y < H; y += 120) { ctx.fillRect(0, y, ROAD_L, 60); ctx.fillRect(ROAD_R, y + 60, W - ROAD_R, 60); }
-    ctx.fillStyle = '#4b5068'; ctx.fillRect(ROAD_L, -20, ROAD_R - ROAD_L, H + 40);
-    ctx.fillStyle = '#e6e8f0'; ctx.fillRect(ROAD_L, -20, 6, H + 40); ctx.fillRect(ROAD_R - 6, -20, 6, H + 40);
-    ctx.fillStyle = 'rgba(255,255,255,.5)'; for (let y = -60 + stripe; y < H; y += 60) ctx.fillRect(MID - 3, y, 6, 30);
+  function drawRoad(c, t) {
+    // dark glass road with a scrolling grid
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(8,12,30,.55)'); g.addColorStop(1, 'rgba(14,20,46,.82)');
+    c.fillStyle = g; c.fillRect(ROAD_L, 0, ROAD_R - ROAD_L, H);
+    c.fillStyle = 'rgba(79,209,255,.07)';
+    for (let y = -60 + stripe; y < H; y += 30) c.fillRect(ROAD_L, y, ROAD_R - ROAD_L, 1);
+    for (let x = ROAD_L + 38; x < ROAD_R; x += 38) c.fillRect(x, 0, 1, H);
+    // glowing edges and centre dashes
+    K.glowLine(c, [[ROAD_L, -10], [ROAD_L, H + 10]], GOOD, 3, 14);
+    K.glowLine(c, [[ROAD_R, -10], [ROAD_R, H + 10]], GOOD, 3, 14);
+    c.save(); c.shadowColor = GOLD; c.shadowBlur = 10; c.fillStyle = K.alpha(GOLD, .75);
+    for (let y = -60 + stripe; y < H; y += 60) { K.rr(c, MID - 3, y, 6, 28, 3); c.fill(); }
+    c.restore();
+    // roadside lights
+    for (let y = -120 + (stripe * 2) % 120; y < H + 20; y += 120) {
+      K.orb(c, ROAD_L / 2, y, 5, GOLD, { glow: 14 }); K.orb(c, W - ROAD_L / 2, y + 60, 5, GOLD, { glow: 14 });
+    }
+  }
 
+  function drawGate(c, it, y) {
+    it.ops.forEach((op, i) => {
+      const x0 = i ? MID + 10 : ROAD_L + 12, w = MID - ROAD_L - 22, col = good(op) ? GOOD : BAD;
+      const fade = it.done ? (it.chosen === i ? .35 : .15) : 1;
+      c.save(); c.globalAlpha = fade;
+      // glass panel
+      const g = c.createLinearGradient(0, y - 34, 0, y + 26);
+      g.addColorStop(0, K.alpha(col, .5)); g.addColorStop(1, K.alpha(col, .18));
+      K.rr(c, x0, y - 34, w, 60, 12); c.fillStyle = g; c.fill();
+      c.shadowColor = col; c.shadowBlur = 18; c.strokeStyle = K.shade(col, .35); c.lineWidth = 2.5; c.stroke();
+      c.shadowBlur = 0; c.fillStyle = 'rgba(255,255,255,.14)'; K.rr(c, x0 + 4, y - 30, w - 8, 20, 8); c.fill();
+      // posts
+      for (const xp of [x0, x0 + w]) {
+        const pg = c.createLinearGradient(xp - 4, 0, xp + 4, 0);
+        pg.addColorStop(0, '#8b93b8'); pg.addColorStop(.5, '#eef1fb'); pg.addColorStop(1, '#6a7196');
+        c.fillStyle = pg; K.rr(c, xp - 4, y - 44, 8, 78, 4); c.fill();
+        K.orb(c, xp, y - 46, 6, col, { glow: 12 });
+      }
+      if (!it.done) K.text(label(op), x0 + w / 2, y - 3, 34, '#fff', { weight: 800, glow: 14, glowColor: col, stroke: 4, strokeColor: 'rgba(0,0,0,.35)' });
+      c.restore();
+    });
+  }
+
+  function drawBoss(c, it, y, t) {
+    const n = bossFight ? bossFight.n : it.n, dead = bossFight && bossFight.dead;
+    if (dead) return;
+    const by = y - 130 + Math.sin(t * 3) * 3, r = 52 + (bossFight ? Math.sin(t * 30) * 2 : 0);
+    const halo = c.createRadialGradient(MID, by, r * .5, MID, by, r * 2.2);
+    halo.addColorStop(0, K.alpha(BAD, .35)); halo.addColorStop(1, K.alpha(BAD, 0));
+    c.fillStyle = halo; c.beginPath(); c.arc(MID, by, r * 2.2, 0, 7); c.fill();
+    // horns
+    c.fillStyle = '#ffb0bb';
+    for (const s of [-1, 1]) { c.beginPath(); c.moveTo(MID + s * r * .45, by - r * .75); c.lineTo(MID + s * r * .95, by - r * 1.25); c.lineTo(MID + s * r * .8, by - r * .45); c.fill(); }
+    K.orb(c, MID, by, r, BAD, { glow: 30 });
+    for (const s of [-1, 1]) {
+      K.orb(c, MID + s * 20, by - 8, 11, '#ffffff', { glow: 0 });
+      c.fillStyle = '#1a0610'; c.beginPath(); c.arc(MID + s * 20 + (px - MID) * .03, by - 6, 5, 0, 7); c.fill();
+    }
+    c.strokeStyle = '#1a0610'; c.lineWidth = 4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(MID - 34, by - 28); c.lineTo(MID - 10, by - 18); c.moveTo(MID + 34, by - 28); c.lineTo(MID + 10, by - 18); c.stroke();
+    c.beginPath(); c.arc(MID, by + 24, 12, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
+    pill(c, 'BOSS ' + n, MID, by - r - 30, BAD, 18);
+  }
+
+  function draw(c, t) {
+    drawRoad(c, t);
     if (lv) for (const it of lv.items) {
       const y = sy(it.y);
-      if (y < -120 || y > H + 80) continue;
-      if (it.kind === 'gate') {
-        it.ops.forEach((op, i) => {
-          const x0 = i ? MID + 8 : ROAD_L + 12, w = MID - ROAD_L - 20;
-          const alpha = it.done ? (it.chosen === i ? .25 : .12) : .82;
-          ctx.fillStyle = good(op) ? `rgba(47,111,214,${alpha})` : `rgba(220,60,70,${alpha})`;
-          rr(x0, y - 34, w, 58, 10); ctx.fill();
-          ctx.strokeStyle = good(op) ? '#9cc0ff' : '#ffb0b6'; ctx.lineWidth = 3; ctx.globalAlpha = it.done ? .3 : 1; ctx.stroke(); ctx.globalAlpha = 1;
-          ctx.fillStyle = '#cfd6ea'; ctx.fillRect(x0 - 4, y - 44, 8, 74); ctx.fillRect(x0 + w - 4, y - 44, 8, 74);
-          if (!it.done) text(label(op), x0 + w / 2, y - 4, 34, '#fff');
-        });
-      } else if (it.kind === 'squad' && !it.done) {
+      if (y < -140 || y > H + 120) continue;
+      if (it.kind === 'gate') drawGate(c, it, y);
+      else if (it.kind === 'squad' && !it.done) {
         const x = it.lane < 0 ? MID : it.lane === 0 ? (ROAD_L + MID) / 2 : (MID + ROAD_R) / 2;
-        if (it.lane < 0) { ctx.fillStyle = 'rgba(220,60,70,.18)'; ctx.fillRect(ROAD_L + 6, y - 40, ROAD_R - ROAD_L - 12, 60); }
-        people(x, y, it.n, '#e8505b', 40); badge(String(it.n), x, y - 52, '#c0303d');
-      } else if (it.kind === 'boss') {
-        const n = bossFight ? bossFight.n : it.n;
-        ctx.fillStyle = '#7a1f2a'; rr(MID - 90, y - 140, 180, 120, 16); ctx.fill();
-        ctx.fillStyle = '#e8505b'; rr(MID - 80, y - 130, 160, 100, 12); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(MID - 32, y - 92, 14, 0, 7); ctx.arc(MID + 32, y - 92, 14, 0, 7); ctx.fill();
-        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(MID - 28, y - 89, 6, 0, 7); ctx.arc(MID + 36, y - 89, 6, 0, 7); ctx.fill();
-        ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(MID - 52, y - 112); ctx.lineTo(MID - 18, y - 102); ctx.moveTo(MID + 52, y - 112); ctx.lineTo(MID + 18, y - 102); ctx.stroke();
-        badge('BOSS ' + n, MID, y - 52, '#2b0d12');
-      }
+        if (it.lane < 0) {
+          c.save(); c.fillStyle = K.alpha(BAD, .14); c.fillRect(ROAD_L + 4, y - 36, ROAD_R - ROAD_L - 8, 56);
+          c.restore();
+          K.glowLine(c, [[ROAD_L + 6, y - 36], [ROAD_R - 6, y - 36]], BAD, 2, 10);
+          K.glowLine(c, [[ROAD_L + 6, y + 20], [ROAD_R - 6, y + 20]], BAD, 2, 10);
+        }
+        people(c, x, y, it.n, BAD, 40, t);
+        pill(c, '−' + it.n, x, y - 56, BAD, 18);
+      } else if (it.kind === 'boss') drawBoss(c, it, y, t);
     }
     // the player's crowd
-    if (state !== 'title') {
-      const r = people(px, PY, crowd, '#3d8bff');
-      badge(String(crowd), px, PY - Math.max(30, r * .7) - 26, '#1d4fb8');
+    if (lv) {
+      const r = people(c, px, PY, crowd, GOOD, 90, t);
+      pill(c, String(Math.round(shown)), px, Math.min(H - 44, PY + Math.max(30, r * .7) + 26), hitT > 0 ? BAD : GOOD, 20);
     }
-    for (const p of parts) { ctx.globalAlpha = Math.max(0, p.life / .6); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); }
-    ctx.globalAlpha = 1;
-    for (const t of toasts) { ctx.globalAlpha = Math.max(0, 1 - t.t / 1.2); text(t.text, t.x, t.y - t.t * 40, t.size, t.color); }
-    ctx.globalAlpha = 1;
-    ctx.restore();
-
     // HUD
-    if (state !== 'title' && lv) {
-      ctx.fillStyle = 'rgba(15,20,35,.75)'; rr(10, 10, W - 20, 44, 12); ctx.fill();
-      text('Level ' + level, 26, 32, 18, '#fff', 800, 'left');
-      const prog = Math.min(1, dist / lv.end);
-      ctx.fillStyle = '#2a3048'; rr(130, 26, 200, 12, 6); ctx.fill(); ctx.fillStyle = '#ffcc33'; rr(130, 26, Math.max(12, 200 * prog), 12, 6); ctx.fill();
-      text('Boss ' + lv.boss, W - 26, 32, 18, '#ff9aa2', 800, 'right');
-    }
-    if (state === 'title' || state === 'won' || state === 'lost') {
-      ctx.fillStyle = 'rgba(12,18,30,.86)'; ctx.fillRect(0, 0, W, H);
-      if (state === 'title') {
-        text('Gate Rush', W / 2, 170, 48, '#ffcc33');
-        const lines = ['Drag or use ← → to steer your crowd.', 'Each gate changes your number: +, −, ×, or ÷.', 'Pick the gate that leaves you with more.', 'Dodge red squads when you can.', 'Beat the boss by being bigger than its number.'];
-        lines.forEach((l, i) => text(l, W / 2, 240 + i * 32, 17, '#d5daea', 600));
-        button(level > 1 ? `Continue: level ${level}` : 'Start', W / 2, 470, 260);
-        if (level > 1) { text('Start over at level 1', W / 2 - 0, 546, 15, '#8f9bb8', 700); }
-      } else if (state === 'won') {
-        const ratio = result.left / Math.max(1, lv.best - lv.boss);
-        const stars = ratio >= .95 ? 3 : ratio >= .7 ? 2 : 1;
-        text(`Level ${level} cleared!`, W / 2, 170, 38, '#ffcc33');
-        text('★'.repeat(stars) + '☆'.repeat(3 - stars), W / 2, 235, 44, '#ffcc33');
-        text(`You had ${result.left} left after the boss.`, W / 2, 300, 18, '#e6e9f5', 700);
-        text(`The best possible path ends with ${lv.best - lv.boss}.`, W / 2, 332, 16, '#9aa4c0', 600);
-        button(`Level ${level + 1}`, W / 2, 470, 220);
-      } else {
-        text('Not enough!', W / 2, 190, 42, '#ff8a8a');
-        text(result.reason, W / 2, 260, 17, '#e6e9f5', 600);
-        text(`The best path had ${lv.best} before the boss.`, W / 2, 295, 16, '#9aa4c0', 600);
-        button('Try again', W / 2, 470, 220);
-      }
+    if (lv) {
+      K.chip(12, 12, 'Level', level, '#fff', { w: 80, h: 50 });
+      K.chip(W - 12, 12, 'Boss', lv.boss, '#ff8a9a', { w: 92, h: 50, align: 'right' });
+      const bx = 104, bw = W - 12 - 92 - 12 - bx;
+      K.panel(c, bx, 12, bw, 50, { r: 12 });
+      K.text('TO THE BOSS', bx + bw / 2, 26, 10, 'rgba(210,218,245,.65)', { weight: 700 });
+      const prog = K.clamp(dist / lv.end, 0, 1);
+      c.fillStyle = 'rgba(255,255,255,.08)'; K.rr(c, bx + 14, 38, bw - 28, 10, 5); c.fill();
+      c.save(); c.shadowColor = GOLD; c.shadowBlur = 10;
+      const pg = c.createLinearGradient(bx + 14, 0, bx + bw - 14, 0); pg.addColorStop(0, GOLD); pg.addColorStop(1, '#ff9f43');
+      c.fillStyle = pg; K.rr(c, bx + 14, 38, Math.max(10, (bw - 28) * prog), 10, 5); c.fill(); c.restore();
+    } else {
+      // menu backdrop: a little demo crowd
+      people(c, MID + Math.sin(t * .8) * 90, PY, 24, GOOD, 24, t);
     }
   }
-  function button(t, x, y, w) { ctx.fillStyle = '#ffcc33'; rr(x - w / 2, y - 29, w, 58, 14); ctx.fill(); text(t, x, y + 1, 22, '#111'); }
 
-  function frame(t) { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; update(dt); draw(); requestAnimationFrame(frame); }
-  requestAnimationFrame(frame);
   // For automated testing.
-  window.__gr = { get state() { return state; }, get lv() { return lv; }, get crowd() { return crowd; }, get dist() { return dist; }, buildLevel, startLevel, steer: x => { targetX = x; }, apply };
+  window.__gr = { get state() { return K.state; }, get lv() { return lv; }, get crowd() { return crowd; }, get dist() { return dist; }, buildLevel, startLevel, steer: x => { targetX = x; }, apply };
 })();
 </script>
 </body>

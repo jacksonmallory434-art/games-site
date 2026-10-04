@@ -121,11 +121,14 @@
   .problem.bad, .board.bad, .mq-board.bad { box-shadow: 0 0 0 4px var(--bad), 0 0 40px rgba(255,93,115,.55) !important; }
 
   /* answer buttons: glossy tiles */
-  .answers button, .mq-answers button, .grid .card, .ops button, .tiles button {
+  .answers button, .mq-answers button, .grid .card .front, .ops button, .tiles button {
     background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.04)) , rgba(16,20,42,.78) !important;
     border: 1px solid rgba(255,255,255,.16) !important; color: #fff !important; border-radius: 16px !important;
     box-shadow: 0 4px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18) !important; transition: transform .1s, border-color .1s, box-shadow .1s; backdrop-filter: blur(6px); }
-  .answers button:hover, .mq-answers button:hover, .grid .card:hover, .ops button:hover, .tiles button:hover { transform: translateY(-2px); border-color: ${th.a} !important; box-shadow: 0 6px 0 rgba(0,0,0,.35), 0 0 18px ${hexA(th.a, .45)} !important; }
+  .answers button:hover, .mq-answers button:hover, .ops button:hover, .tiles button:hover { transform: translateY(-2px); border-color: ${th.a} !important; box-shadow: 0 6px 0 rgba(0,0,0,.35), 0 0 18px ${hexA(th.a, .45)} !important; }
+  /* memory cards flip in 3D, so style their faces and never move the card itself */
+  .grid .card:not(.up):not(.done):hover .back { border-color: ${th.a}; box-shadow: 0 0 18px ${hexA(th.a, .45)}; }
+  .grid .card.done .front { border-color: var(--good) !important; box-shadow: 0 0 16px rgba(91,227,138,.45) !important; }
   .answers button:active, .mq-answers button:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.35) !important; }
   .answers button small, .mq-answers button small { color: ${th.a} !important; opacity: .8; }
   .mq-q, .q { text-shadow: 0 2px 12px rgba(0,0,0,.4); }
