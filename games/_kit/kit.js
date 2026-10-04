@@ -463,6 +463,7 @@
     // ---------- loop ----------
     let last = performance.now();
     function frame(now) {
+      requestAnimationFrame(frame); // schedule first so one bad frame can't freeze the game
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       K.t += dt;
@@ -482,7 +483,6 @@
         ctx.fillStyle = flashCol; ctx.fillRect(0, 0, W, H);
         ctx.globalAlpha = 1;
       }
-      requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
 

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit Shot</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  const SUN = [400, 310], MU = 3.6e6, SUN_R = 26, DT = 1 / 240, MAXT = 14, PULL = 2.4, VMAX = 330;
+  // Each level is built from one launch that works: rings sit along that flight (at fractions of it).
+  const LEVELS = [
+    { at: [400, 460], v: [155, 0], rings: [0.25, 0.5, 0.75], hz: [] },
+    { at: [400, 470], v: [168, 0], rings: [0.2, 0.5, 0.8], hz: [[400, 250, 20]] },
+    { at: [240, 310], v: [0, 128], rings: [0.3, 0.55, 0.8], hz: [[520, 420, 24]] },
+    { at: [400, 500], v: [196, -12], rings: [0.12, 0.3, 0.5], hz: [[250, 250, 26]], escape: true },
+    { at: [560, 330], v: [-50, -160], rings: [0.15, 0.35, 0.85], hz: [[300, 420, 24], [470, 150, 20]] },
+    { at: [330, 440], v: [140, 70], rings: [0.15, 0.4, 0.65, 0.85], hz: [[600, 130, 24], [250, 190, 20]] },
+  ];
+  const SHOTS = 3;
+  let demoSim = null;
+  let lv = 0, L, probe, flying, path, rings, shots, aim, saved, done, flightT, bestOrbit;
+  const levelsBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'orbit-shot', title: 'Orbit Shot', accent: '#ffd34d', accent2: '#ff6bd6', bg: ['#05061a', '#120626'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(levelsBtn, x, y)) return menu();
+      if (!flying && !done) { aim = { x, y }; dragFrom = { x, y }; }
+    },
+    move(x, y) { if (aim) { aim.x = x; aim.y = y; } },
+    up() { if (aim) { const v = aimV(); aim = null; dragFrom = null; if (Math.hypot(...v) > 20) launch(v); } },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Orbit Shot',
+      sub: 'Slingshot a probe around a star. Gravity bends its path into a conic: a circle, an ellipse, a parabola, or a hyperbola.',
+      how: ['Drag back from anywhere and let go to launch. Pull farther for more speed.', 'Fly through <b>every ring in one shot</b>. Avoid the moons and the sun!', 'Watch the readout: faster launches stretch your ellipse until it breaks free as a hyperbola.'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  // one physics step (velocity Verlet) — the same code is used for the preview, the flight and building levels
+  function step(s) {
+    const ax = (x, y) => { const dx = SUN[0] - x, dy = SUN[1] - y, r = Math.hypot(dx, dy); return [MU * dx / r ** 3, MU * dy / r ** 3]; };
+    const [a1x, a1y] = ax(s.x, s.y);
+    s.x += s.vx * DT + 0.5 * a1x * DT * DT; s.y += s.vy * DT + 0.5 * a1y * DT * DT;
+    const [a2x, a2y] = ax(s.x, s.y);
+    s.vx += 0.5 * (a1x + a2x) * DT; s.vy += 0.5 * (a1y + a2y) * DT;
+  }
+  const offscreen = s => s.x < -60 || s.x > 860 || s.y < -60 || s.y > 660;
+  const hitSun = s => Math.hypot(s.x - SUN[0], s.y - SUN[1]) < SUN_R;
+  function simulate(at, v, hz, maxT = MAXT) {
+    const s = { x: at[0], y: at[1], vx: v[0], vy: v[1] }, pts = [[s.x, s.y]];
+    let end = 'time', ang = 0, prev = Math.atan2(s.y - SUN[1], s.x - SUN[0]);
+    for (let t = 0; t < maxT; t += DT) {
+      step(s);
+      const a = Math.atan2(s.y - SUN[1], s.x - SUN[0]);
+      ang += Math.atan2(Math.sin(a - prev), Math.cos(a - prev)); prev = a;
+      if (Math.round(t / DT) % 4 === 0) pts.push([s.x, s.y]);
+      if (hitSun(s)) { end = 'sun'; break; }
+      if (hz.some(([x, y, r]) => Math.hypot(s.x - x, s.y - y) < r)) { end = 'moon'; break; }
+      if (offscreen(s)) { end = 'away'; break; }
+      if (Math.abs(ang) >= Math.PI * 2) { end = 'orbit'; break; }
+    }
+    return { pts, end };
+  }
+  function orbitInfo(at, v) {
+    const rx = at[0] - SUN[0], ry = at[1] - SUN[1], r = Math.hypot(rx, ry), sp = Math.hypot(...v);
+    const E = sp * sp / 2 - MU / r, h = rx * v[1] - ry * v[0];
+    const e = Math.sqrt(Math.max(0, 1 + 2 * E * h * h / (MU * MU)));
+    const type = e < 0.05 ? 'Circle' : e < 0.97 ? 'Ellipse' : e < 1.03 ? 'Parabola' : 'Hyperbola';
+    return { e, type };
+  }
+
+  function load(i) {
+    lv = i; L = LEVELS[i];
+    const sol = simulate(L.at, L.v, L.hz);
+    rings = L.rings.map(f => { const p = sol.pts[Math.floor(f * (sol.pts.length - 1))]; return { x: p[0], y: p[1], got: false }; });
+    shots = 0; probe = null; flying = false; path = []; aim = null; done = false;
+  }
+  window.solveLevel = () => launch(L.v.slice());
+  let dragFrom = null;
+  function aimV() {
+    let vx = (dragFrom.x - aim.x) * PULL, vy = (dragFrom.y - aim.y) * PULL;
+    const sp = Math.hypot(vx, vy);
+    if (sp > VMAX) { vx *= VMAX / sp; vy *= VMAX / sp; }
+    return [vx, vy];
+  }
+
+  function launch(v) {
+    if (flying || done) return;
+    shots++;
+    probe = { x: L.at[0], y: L.at[1], vx: v[0], vy: v[1] };
+    flying = true; path = [[probe.x, probe.y]]; flightT = 0; probe.ang = 0; probe.prev = Math.atan2(probe.y - SUN[1], probe.x - SUN[0]);
+    rings.forEach(r => r.got = false);
+    bestOrbit = orbitInfo(L.at, v);
+    K.sfx.whoosh();
+  }
+
+  function endFlight(why) {
+    flying = false;
+    if (rings.every(r => r.got)) return win();
+    const x = K.clamp(probe.x, 30, 770), y = K.clamp(probe.y, 80, 570);
+    if (why === 'sun' || why === 'moon') { K.burst(probe.x, probe.y, '#ff9f43', 30, 300, 5); K.shake(10); K.sfx.boom(); }
+    K.float(x, y - 20, why === 'sun' ? 'Burned up!' : why === 'moon' ? 'Hit a moon!' : why === 'away' ? 'Lost in space' : 'Missed some rings', '#ff5d73', 20);
+    if (shots >= SHOTS) {
+      done = true; K.state = 'over';
+      setTimeout(() => { K.sfx.lose(); K.overlay({ kicker: `Level ${lv + 1}`, title: 'Out of probes', sub: 'Watch the dotted preview while you aim, and try a different speed or direction.', buttons: [{ label: 'Try again', on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu }] }); }, 900);
+    }
+  }
+  function win() {
+    done = true; K.state = 'over';
+    const st = shots === 1 ? 3 : shots === 2 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    K.burst(probe.x, probe.y, '#ffd34d', 40, 340, 5);
+    K.sfx.win();
+    setTimeout(() => {
+      const b = [];
+      if (lv < LEVELS.length - 1) b.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+      b.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Level ${lv + 1}`, title: 'All rings!', sub: `Your orbit: <b>${bestOrbit.type.toLowerCase()}</b>, eccentricity ${bestOrbit.e.toFixed(2)}.`,
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: b });
+    }, 700);
+  }
+
+  function update(dt) {
+    if (!flying) return;
+    for (let k = 0; k < Math.round(dt / DT); k++) {
+      step(probe); flightT += DT;
+      const a = Math.atan2(probe.y - SUN[1], probe.x - SUN[0]);
+      probe.ang += Math.atan2(Math.sin(a - probe.prev), Math.cos(a - probe.prev)); probe.prev = a;
+      for (const r of rings) if (!r.got && Math.hypot(probe.x - r.x, probe.y - r.y) < 22) {
+        r.got = true; K.burst(r.x, r.y, '#ffd34d', 18, 220); K.sfx.note(660 + rings.filter(q => q.got).length * 120, 0.15);
+        if (rings.every(q => q.got)) { flying = false; return win(); }
+      }
+      if (hitSun(probe)) return endFlight('sun');
+      if (L.hz.some(([x, y, r]) => Math.hypot(probe.x - x, probe.y - y) < r)) return endFlight('moon');
+      if (offscreen(probe)) return endFlight('away');
+      if (Math.abs(probe.ang) >= Math.PI * 2.05 || flightT > MAXT) return endFlight('orbit');
+    }
+    path.push([probe.x, probe.y]);
+    if (path.length > 900) path.shift();
+  }
+
+  function drawSun(c, t) {
+    const [x, y] = SUN;
+    for (let k = 3; k >= 1; k--) {
+      const g = c.createRadialGradient(x, y, 0, x, y, SUN_R * (1.4 + k * 0.9 + Math.sin(t * 2 + k) * 0.08));
+      g.addColorStop(0, 'rgba(255,220,120,.35)'); g.addColorStop(1, 'rgba(255,120,60,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, SUN_R * 4, 0, 7); c.fill();
+    }
+    K.orb(c, x, y, SUN_R, '#ffb347', { glow: 50 });
+  }
+
+  function draw(c, t) {
+    // stars
+    for (let i = 0; i < 80; i++) { const x = (i * 211) % 800, y = (i * 97) % 600; c.fillStyle = `rgba(255,255,255,${0.2 + 0.5 * Math.abs(Math.sin(t + i))})`; c.fillRect(x, y, 1.5, 1.5); }
+    drawSun(c, t);
+    const lvl = L || LEVELS[1];
+    for (const [x, y, r] of lvl.hz) {
+      const g = c.createRadialGradient(x - r * 0.3, y - r * 0.3, 2, x, y, r);
+      g.addColorStop(0, '#c9c3d8'); g.addColorStop(1, '#4a4460');
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+      c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.arc(x + r * 0.3, y + r * 0.1, r * 0.25, 0, 7); c.fill();
+    }
+    if (!L) {
+      const sim = demoSim || (demoSim = simulate(lvl.at, lvl.v, []));
+      c.save(); c.setLineDash([4, 8]); c.strokeStyle = 'rgba(255,211,77,.5)'; c.lineWidth = 2; c.beginPath(); sim.pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); c.restore();
+      const p = sim.pts[Math.floor(t * 60) % sim.pts.length] || sim.pts[0];
+      K.orb(c, p[0], p[1], 7, '#4fd1ff', { glow: 18 });
+      return;
+    }
+    // rings
+    for (const r of rings) {
+      c.save(); c.translate(r.x, r.y); c.rotate(t * 0.8);
+      c.strokeStyle = r.got ? '#7ee36b' : '#ffd34d'; c.lineWidth = 4; c.shadowColor = c.strokeStyle; c.shadowBlur = 16;
+      c.beginPath(); c.ellipse(0, 0, 20, 12, 0, 0, 7); c.stroke(); c.restore();
+    }
+    // launch pad
+    K.orb(c, L.at[0], L.at[1], 10, '#4fd1ff', { glow: 16 });
+    // aim preview
+    if (aim && dragFrom) {
+      const v = aimV(), sim = simulate(L.at, v, L.hz, 1.6);
+      c.save(); c.setLineDash([3, 7]);
+      for (let i = 1; i < sim.pts.length; i++) {
+        c.strokeStyle = `rgba(255,255,255,${0.8 * (1 - i / sim.pts.length)})`; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(...sim.pts[i - 1]); c.lineTo(...sim.pts[i]); c.stroke();
+      }
+      c.restore();
+      c.strokeStyle = 'rgba(255,107,214,.6)'; c.lineWidth = 2; c.beginPath(); c.moveTo(dragFrom.x, dragFrom.y); c.lineTo(aim.x, aim.y); c.stroke();
+      const info = orbitInfo(L.at, v);
+      K.panel(c, 250, 532, 300, 50, { r: 14, glow: 14, glowColor: 'rgba(255,107,214,.3)' });
+      K.text(info.type, 330, 557, 18, info.type === 'Hyperbola' ? '#ff6bd6' : info.type === 'Parabola' ? '#ff9f43' : '#4fd1ff', { weight: 800 });
+      K.text(`e = ${info.e.toFixed(2)}`, 440, 550, 14, '#fff', { weight: 700 });
+      K.text(`speed ${Math.round(Math.hypot(...v))}`, 440, 568, 10, 'rgba(220,228,250,.6)');
+    } else if (!flying) K.text('Drag back and release to launch', 400, 560, 14, 'rgba(220,228,250,.7)', { weight: 600 });
+    // flight trail + probe
+    if (path.length > 1) K.glowLine(c, path, '#4fd1ff', 2.5, 12);
+    if (probe && flying) K.orb(c, probe.x, probe.y, 7, '#e6f8ff', { glow: 20 });
+    // HUD
+    K.chip(22, 14, 'Level', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 96, h: 50 });
+    K.chip(128, 14, 'Probes', SHOTS - shots, '#4fd1ff', { w: 84, h: 50 });
+    K.chip(222, 14, 'Rings', `${rings.filter(r => r.got).length} / ${rings.length}`, '#ffd34d', { w: 90, h: 50 });
+    K.button(levelsBtn);
+  }
+})();
+</script>
+</body>
+</html>

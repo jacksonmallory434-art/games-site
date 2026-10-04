@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vector Pilot</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // Grid uses math coordinates: x right, y up. Asteroids are [x, y, radius].
+  const LEVELS = [
+    { s: [2, 6], d: [17, 6], rocks: [], wind: [0, 0] },
+    { s: [2, 2], d: [17, 10], rocks: [[9, 6, 1.6]], wind: [0, 0] },
+    { s: [3, 10], d: [3, 2], rocks: [[3, 6, 1.8]], wind: [0, 0] },
+    { s: [2, 2], d: [18, 2], rocks: [[10, 1, 1.6], [10, 4.4, 1.5]], wind: [0, 0] },
+    { s: [2, 10], d: [17, 10], rocks: [[9.5, 9, 1.6]], wind: [0, -1], windTxt: 'Space current pushes you ⟨0, −1⟩ every turn' },
+    { s: [1, 1], d: [18, 11], rocks: [[5, 2, 1.5], [5, 6.5, 1.5], [10, 9.5, 1.5], [10, 5, 1.5], [14.5, 2, 1.5], [15, 8, 1.4]], wind: [0, 0] },
+    { s: [17, 6], d: [3, 6], rocks: [[10, 6, 1.4]], wind: [1, 0], windTxt: 'Solar wind pushes you ⟨1, 0⟩ every turn' },
+    { s: [2, 11], d: [17, 1], rocks: [[6, 8, 1.6], [10, 4, 1.6], [14, 8, 1.6], [6, 2, 1.4]], wind: [0, 0] },
+  ];
+  const GW = 20, GH = 13, CELL = 34, GX = (800 - (GW - 1) * CELL) / 2, GY = 92;
+  const px = x => GX + x * CELL, py = y => GY + (GH - 1 - y) * CELL;
+  const VMAX = 6;
+  let lv = 0, L, pos, vel, path, turns, tries, phase, anim, saved, par, best;
+  const retryBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'vector-pilot', title: 'Vector Pilot', accent: '#4fd1ff', accent2: '#ff6bd6', bg: ['#050a1e', '#100828'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(retryBtn, x, y)) return menu();
+      if (phase !== 'aim') return;
+      for (const [ax, ay] of choices()) {
+        const [tx, ty] = target(ax, ay);
+        if (Math.hypot(px(tx) - x, py(ty) - y) < 15) return thrust(ax, ay);
+      }
+    },
+    key(k) {
+      if (K.state !== 'play' || phase !== 'aim') return;
+      const m = { q: [-1, 1], w: [0, 1], e: [1, 1], a: [-1, 0], s: [0, 0], d: [1, 0], z: [-1, -1], x: [0, -1], c: [1, -1] }[k.toLowerCase()];
+      if (m) thrust(...m);
+    },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Vector Pilot',
+      sub: 'Fly by adding vectors. Each turn your thrust is added to your velocity, and your velocity moves the ship.',
+      how: ['Your ship keeps its velocity vector ⟨vx, vy⟩ from turn to turn.', 'Each turn, pick one of the 9 glowing dots. That adds a thrust from ⟨−1, −1⟩ to ⟨1, 1⟩ to your velocity.', 'Dock by landing on the station going slowly: both parts of your speed must be −1, 0, or 1.', 'Dodge asteroids and stay on the map!'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  const out = (x, y) => x < 0 || x > GW - 1 || y < 0 || y > GH - 1;
+  function hits(x1, y1, x2, y2, rocks) {
+    for (const [rx, ry, rr] of rocks) {
+      const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+      const t = l2 ? K.clamp(((rx - x1) * dx + (ry - y1) * dy) / l2, 0, 1) : 0;
+      if (Math.hypot(x1 + dx * t - rx, y1 + dy * t - ry) < rr) return true;
+    }
+    return false;
+  }
+  const docked = (p, v, d) => p[0] === d[0] && p[1] === d[1] && Math.abs(v[0]) <= 1 && Math.abs(v[1]) <= 1;
+
+  // fewest turns, found by searching every (position, velocity)
+  function solve(lvl) {
+    const key = (x, y, vx, vy) => ((x * GH + y) * 13 + vx + 6) * 13 + vy + 6;
+    const start = [...lvl.s, 0, 0], seen = new Map([[key(...start), null]]);
+    let q = [start];
+    for (let depth = 0; depth < 40 && q.length; depth++) {
+      const nq = [];
+      for (const st of q) {
+        const [x, y, vx, vy] = st;
+        for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) {
+          const nvx = vx + ax, nvy = vy + ay;
+          if (Math.abs(nvx) > VMAX || Math.abs(nvy) > VMAX) continue;
+          const nx = x + nvx + lvl.wind[0], ny = y + nvy + lvl.wind[1];
+          if (out(nx, ny) || hits(x, y, nx, ny, lvl.rocks)) continue;
+          const k = key(nx, ny, nvx, nvy);
+          if (seen.has(k)) continue;
+          seen.set(k, [st, [ax, ay]]);
+          if (docked([nx, ny], [nvx, nvy], lvl.d)) {
+            const moves = []; let cur = k;
+            while (seen.get(cur)) { const [prev, a] = seen.get(cur); moves.unshift(a); cur = key(...prev); }
+            return moves;
+          }
+          nq.push([nx, ny, nvx, nvy]);
+        }
+      }
+      q = nq;
+    }
+    return null;
+  }
+
+  function load(i) {
+    lv = i; L = LEVELS[i];
+    best = solve(L); par = best ? best.length : 99;
+    tries = (tries && lv === i) ? tries : 0;
+    reset();
+  }
+  function reset() { pos = L.s.slice(); vel = [0, 0]; path = [pos.slice()]; turns = 0; phase = 'aim'; anim = null; }
+  window.solveLevel = async () => { for (const a of solve(L)) { thrust(...a); await new Promise(r => setTimeout(r, 650)); } };
+
+  function choices() { const out = []; for (let ay = 1; ay >= -1; ay--) for (let ax = -1; ax <= 1; ax++) out.push([ax, ay]); return out; }
+  const target = (ax, ay) => [pos[0] + vel[0] + ax + L.wind[0], pos[1] + vel[1] + ay + L.wind[1]];
+
+  function thrust(ax, ay) {
+    if (phase !== 'aim') return;
+    const nv = [vel[0] + ax, vel[1] + ay];
+    const np = [pos[0] + nv[0] + L.wind[0], pos[1] + nv[1] + L.wind[1]];
+    turns++;
+    anim = { from: pos.slice(), to: np, t: 0, a: [ax, ay] };
+    vel = nv; phase = 'move';
+    K.sfx.whoosh();
+  }
+
+  function arrive() {
+    const { from, to } = anim;
+    anim = null;
+    if (out(...to) || hits(...from, ...to, L.rocks)) {
+      pos = to; path.push(to);
+      tries++;
+      phase = 'crash';
+      const cx = px(K.clamp(to[0], 0, GW - 1)), cy = py(K.clamp(to[1], 0, GH - 1));
+      K.burst(cx, cy, '#ff9f43', 34, 320, 5); K.shake(12); K.sfx.boom();
+      K.float(cx, cy - 30, out(...to) ? 'Lost in space!' : 'Asteroid!', '#ff5d73', 24);
+      setTimeout(() => { if (K.state === 'play') reset(); }, 1300);
+      return;
+    }
+    pos = to; path.push(to);
+    if (docked(pos, vel, L.d)) return win();
+    if (pos[0] === L.d[0] && pos[1] === L.d[1]) K.float(px(pos[0]), py(pos[1]) - 34, 'Too fast to dock!', '#ffd34d', 18);
+    phase = 'aim';
+    K.sfx.tick();
+  }
+
+  function win() {
+    phase = 'done'; K.state = 'over';
+    const st = turns <= par ? 3 : turns <= par + 2 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    K.burst(px(pos[0]), py(pos[1]), '#4fd1ff', 40, 320, 5); K.burst(px(pos[0]), py(pos[1]), '#ffd34d', 24, 240);
+    K.sfx.win();
+    setTimeout(() => {
+      const btns = [];
+      if (lv < LEVELS.length - 1) btns.push({ label: 'Next mission', on: () => { K.state = 'play'; tries = 0; load(lv + 1); } });
+      btns.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; tries = 0; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Mission ${lv + 1}`, title: st === 3 ? 'Perfect docking!' : 'Docked!', sub: `${turns} turns` + (st < 3 ? `. The best pilots do it in ${par}.` : `. That's the fastest route!`),
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: btns });
+    }, 900);
+  }
+
+  function update(dt) {
+    if (anim) { anim.t += dt / 0.45; if (anim.t >= 1) arrive(); }
+  }
+
+  function arrow(c, x1, y1, x2, y2, col, w = 3) {
+    const a = Math.atan2(y2 - y1, x2 - x1), len = Math.hypot(x2 - x1, y2 - y1);
+    if (len < 2) return;
+    c.save(); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = w; c.shadowColor = col; c.shadowBlur = 10; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2 - Math.cos(a) * 8, y2 - Math.sin(a) * 8); c.stroke();
+    c.beginPath(); c.moveTo(x2, y2); c.lineTo(x2 - Math.cos(a - 0.45) * 12, y2 - Math.sin(a - 0.45) * 12); c.lineTo(x2 - Math.cos(a + 0.45) * 12, y2 - Math.sin(a + 0.45) * 12); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  function drawShip(c, x, y, ang) {
+    c.save(); c.translate(x, y); c.rotate(ang);
+    c.shadowColor = '#4fd1ff'; c.shadowBlur = 16;
+    const g = c.createLinearGradient(-12, 0, 14, 0); g.addColorStop(0, '#2a7bd6'); g.addColorStop(1, '#e6f8ff');
+    c.fillStyle = g; c.beginPath(); c.moveTo(15, 0); c.lineTo(-10, -10); c.lineTo(-5, 0); c.lineTo(-10, 10); c.closePath(); c.fill();
+    c.fillStyle = '#ff9f43'; c.beginPath(); c.moveTo(-6, -4); c.lineTo(-14 - Math.random() * 6, 0); c.lineTo(-6, 4); c.fill();
+    c.restore();
+  }
+
+  function draw(c, t) {
+    // grid dots
+    for (let x = 0; x < GW; x++) for (let y = 0; y < GH; y++) { c.fillStyle = 'rgba(160,190,255,.16)'; c.beginPath(); c.arc(px(x), py(y), 1.6, 0, 7); c.fill(); }
+    c.strokeStyle = 'rgba(160,190,255,.12)'; c.strokeRect(px(0) - 10, py(GH - 1) - 10, (GW - 1) * CELL + 20, (GH - 1) * CELL + 20);
+    const lvl = L || LEVELS[5];
+    // asteroids
+    for (const [rx, ry, rr] of lvl.rocks) {
+      const x = px(rx), y = py(ry), r = rr * CELL;
+      const g = c.createRadialGradient(x - r * 0.3, y - r * 0.3, 2, x, y, r);
+      g.addColorStop(0, '#9b8a7a'); g.addColorStop(1, '#3a2f2a');
+      c.fillStyle = g; c.beginPath();
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + rx, rr2 = r * (0.86 + 0.14 * Math.sin(k * 2.7 + ry)); c.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); }
+      c.fill();
+      c.fillStyle = 'rgba(0,0,0,.25)'; c.beginPath(); c.arc(x + r * 0.25, y + r * 0.1, r * 0.22, 0, 7); c.arc(x - r * 0.3, y + r * 0.35, r * 0.13, 0, 7); c.fill();
+    }
+    // dock
+    const [dx, dy] = lvl.d;
+    c.save(); c.translate(px(dx), py(dy)); c.rotate(t * 0.5);
+    c.strokeStyle = '#ffd34d'; c.lineWidth = 3; c.shadowColor = '#ffd34d'; c.shadowBlur = 16;
+    c.beginPath(); c.arc(0, 0, 16, 0, 7); c.stroke();
+    for (let k = 0; k < 4; k++) { c.rotate(Math.PI / 2); c.fillStyle = '#ffd34d'; c.fillRect(16, -3, 8, 6); }
+    c.restore();
+    c.fillStyle = Math.sin(t * 6) > 0 ? '#7ee36b' : '#2a5a2a'; c.beginPath(); c.arc(px(dx), py(dy), 4, 0, 7); c.fill();
+    if (!L) { drawShip(c, px(lvl.s[0]) + Math.sin(t) * 6, py(lvl.s[1]), -0.4); return; }
+
+    // flight path so far
+    for (let i = 1; i < path.length; i++) arrow(c, px(path[i - 1][0]), py(path[i - 1][1]), px(path[i][0]), py(path[i][1]), 'rgba(79,209,255,.35)', 2);
+    // ship position
+    let sx = px(pos[0]), sy = py(pos[1]);
+    if (anim) { const e = K.ease(Math.min(1, anim.t)); sx = px(anim.from[0] + (anim.to[0] - anim.from[0]) * e); sy = py(anim.from[1] + (anim.to[1] - anim.from[1]) * e); }
+    if (phase === 'aim') {
+      // coasting point: where you'd go with no thrust
+      const cx = px(pos[0] + vel[0] + L.wind[0]), cy = py(pos[1] + vel[1] + L.wind[1]);
+      if (vel[0] || vel[1]) arrow(c, sx, sy, px(pos[0] + vel[0]), py(pos[1] + vel[1]), '#4fd1ff', 3);
+      if (L.wind[0] || L.wind[1]) arrow(c, px(pos[0] + vel[0]), py(pos[1] + vel[1]), cx, cy, '#a66bff', 2);
+      // 9 choices
+      for (const [ax, ay] of choices()) {
+        const [tx, ty] = target(ax, ay);
+        const bad = out(tx, ty) || hits(pos[0], pos[1], tx, ty, L.rocks);
+        const hov = K.ptr.active && Math.hypot(px(tx) - K.ptr.x, py(ty) - K.ptr.y) < 15;
+        const isDock = tx === L.d[0] && ty === L.d[1];
+        if (hov) {
+          arrow(c, cx, cy, px(tx), py(ty), '#ff6bd6', 2.5);
+          c.save(); c.setLineDash([4, 5]); c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(sx, sy); c.lineTo(px(tx), py(ty)); c.stroke(); c.restore();
+        }
+        K.orb(c, px(tx), py(ty), hov ? 9 : 6, bad ? '#ff5d73' : isDock ? '#ffd34d' : '#ff6bd6', { glow: hov ? 18 : 8 });
+      }
+    }
+    const ang = Math.atan2(-(vel[1] || 0.0001), vel[0] || (vel[1] ? 0 : 1));
+    if (phase !== 'crash') drawShip(c, sx, sy, ang);
+
+    // HUD
+    K.chip(22, 14, 'Mission', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 100, h: 50 });
+    K.chip(132, 14, 'Turns', turns, turns <= par ? '#7ee36b' : '#ff9f43', { w: 80, h: 50 });
+    K.chip(222, 14, 'Best route', par, '#4fd1ff', { w: 100, h: 50 });
+    K.panel(c, 340, 14, 200, 50, { r: 12, glow: 14, glowColor: 'rgba(79,209,255,.3)' });
+    K.text('VELOCITY', 380, 39, 10, 'rgba(220,228,250,.6)');
+    K.text(`⟨${vel[0]}, ${vel[1]}⟩`.replace(/-/g, '−'), 480, 40, 22, '#4fd1ff', { weight: 800 });
+    K.button(retryBtn);
+    const msg = L.windTxt || 'Pick a pink dot: velocity + thrust = new velocity';
+    K.text(msg, 400, 568, 13, L.windTxt ? '#a66bff' : 'rgba(220,228,250,.6)', { weight: 600 });
+  }
+})();
+</script>
+</body>
+</html>

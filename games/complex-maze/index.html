@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Complex Maze</title>
+<script src="../_kit/kit.js"></script>
+</head>
+<body>
+<script>
+(() => {
+  // z = [real, imaginary]. Black holes block squares.
+  const LEVELS = [
+    { s: [1, 0], g: [0, 3], o: ['*i', '+1'], b: [] },
+    { s: [1, 1], g: [4, -4], o: ['*2', 'conj', '+1'], b: [[2, 2]] },
+    { s: [2, 1], g: [-3, 3], o: ['*i', '-1', '+i'], b: [[-1, 2]] },
+    { s: [4, 2], g: [-2, -5], o: ['*-i', '-i', 'conj', '+1'], b: [[2, -4], [-2, 4], [4, -2]] },
+    { s: [3, 0], g: [0, -3], o: ['*i', '+1'], b: [[0, 3]] },
+    { s: [1, 0], g: [0, 4], o: ['*(1+i)', '-1', 'conj'], b: [[1, 1]] },
+    { s: [2, -1], g: [-5, 0], o: ['*(1+i)', '*i', '+1'], b: [[3, 1], [1, 2]] },
+    { s: [3, 1], g: [-1, -3], o: ['*-1', '*i', '+i'], b: [[-3, -1], [1, -3]] },
+  ];
+  const OPS = {
+    '+1': { f: ([a, b]) => [a + 1, b], label: '+ 1', kind: 'add', note: 'move right' },
+    '-1': { f: ([a, b]) => [a - 1, b], label: '− 1', kind: 'add', note: 'move left' },
+    '+i': { f: ([a, b]) => [a, b + 1], label: '+ i', kind: 'add', note: 'move up' },
+    '-i': { f: ([a, b]) => [a, b - 1], label: '− i', kind: 'add', note: 'move down' },
+    '*i': { f: ([a, b]) => [-b, a], label: '× i', kind: 'mul', rot: 90, sc: 1, note: 'turn 90° left' },
+    '*-i': { f: ([a, b]) => [b, -a], label: '× (−i)', kind: 'mul', rot: -90, sc: 1, note: 'turn 90° right' },
+    '*-1': { f: ([a, b]) => [-a, -b], label: '× (−1)', kind: 'mul', rot: 180, sc: 1, note: 'turn 180°' },
+    '*2': { f: ([a, b]) => [2 * a, 2 * b], label: '× 2', kind: 'mul', rot: 0, sc: 2, note: 'stretch ×2' },
+    '*(1+i)': { f: ([a, b]) => [a - b, a + b], label: '× (1+i)', kind: 'mul', rot: 45, sc: Math.SQRT2, note: 'turn 45°, stretch √2' },
+    'conj': { f: ([a, b]) => [a, -b], label: 'z̄ flip', kind: 'conj', note: 'mirror over real axis' },
+  };
+  const CX = 300, CY = 318, U = 40, R = 6;
+  const sx = a => CX + a * U, sy = b => CY - b * U;
+  let lv = 0, L, z, moves, par, anim, trail, btns, saved, done;
+  const retryBtn = { x: 690, y: 14, w: 88, h: 40, label: 'Retry', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+  const levelsBtn = { x: 592, y: 14, w: 88, h: 40, label: 'Levels', size: 15, color: '#39405a', textColor: '#e6eaf8' };
+
+  const K = window.K = MA.game({
+    slug: 'complex-maze', title: 'Complex Maze', accent: '#a66bff', accent2: '#4fd1ff', bg: ['#0e0828', '#081430'],
+    noMenu: true, update, draw,
+    down(x, y) {
+      if (K.state !== 'play') return;
+      if (K.hit(retryBtn, x, y)) return load(lv);
+      if (K.hit(levelsBtn, x, y)) return menu();
+      btns.forEach((b, i) => { if (!b.disabled && K.hit(b, x, y)) apply(i); });
+    },
+    key(k) { if (K.state === 'play' && k >= '1' && k <= '9') apply(+k - 1); if (k === 'r' || k === 'R') load(lv); },
+  });
+
+  saved = K.load('stars', []);
+  function menu() {
+    K.state = 'menu';
+    const total = saved.reduce((a, s) => a + (s || 0), 0);
+    K.overlay({
+      kicker: 'MathAdvice', title: 'Complex Maze',
+      sub: 'Your ship is a complex number. Steer it with arithmetic: adding slides it, multiplying spins it around the origin.',
+      how: ['Use the move buttons to change <b>z</b>. Adding <b>i</b> moves up, and multiplying by <b>i</b> turns you 90° around 0.', 'Reach the star. You can\'t land in a black hole or leave the map.', 'Fewest moves earns three stars.'],
+      html: `<p class="ma-best">★ ${total} / ${LEVELS.length * 3} stars</p>`,
+      levels: { n: LEVELS.length, unlocked: Math.min(LEVELS.length - 1, saved.filter(Boolean).length), stars: saved, on: i => { K.state = 'play'; load(i); } },
+      buttons: [],
+    });
+  }
+  const ready = () => menu();
+  document.fonts ? document.fonts.load('700 16px Lexend').then(ready, ready) : ready();
+
+  const same = (p, q) => p[0] === q[0] && p[1] === q[1];
+  const blocked = (p, lvl = L) => Math.abs(p[0]) > R || Math.abs(p[1]) > R || lvl.b.some(q => same(p, q));
+  function solve(lvl) {
+    const seen = new Set([lvl.s + '']); let q = [[lvl.s, 0]];
+    while (q.length) {
+      const [p, d] = q.shift();
+      if (same(p, lvl.g)) return d;
+      for (const o of lvl.o) { const n = OPS[o].f(p); if (blocked(n, lvl) || seen.has(n + '')) continue; seen.add(n + ''); q.push([n, d + 1]); }
+    }
+    return 99;
+  }
+  function fmt([a, b]) {
+    if (!b) return String(a).replace('-', '−');
+    const im = Math.abs(b) === 1 ? 'i' : Math.abs(b) + 'i';
+    if (!a) return (b < 0 ? '−' : '') + im;
+    return `${String(a).replace('-', '−')} ${b < 0 ? '−' : '+'} ${im}`;
+  }
+
+  function load(i) {
+    lv = i; L = LEVELS[i]; z = L.s.slice(); moves = 0; par = solve(L); anim = null; trail = [z.slice()]; done = false;
+    btns = L.o.map((o, j) => ({ x: 592, y: 160 + j * 78, w: 186, h: 64, label: OPS[o].label, sub: `${j + 1} · ${OPS[o].note}`, size: 22, op: o, color: OPS[o].kind === 'add' ? '#4fd1ff' : OPS[o].kind === 'mul' ? '#a66bff' : '#ff6bd6' }));
+    refresh();
+  }
+  window.solveLevel = async () => {
+    // breadth-first search for the route, then play it
+    const seen = new Map([[L.s + '', null]]); let q = [L.s];
+    while (q.length) { const p = q.shift(); if (same(p, L.g)) break; L.o.forEach((o, j) => { const n = OPS[o].f(p); if (!blocked(n) && !seen.has(n + '')) { seen.set(n + '', [p, j]); q.push(n); } }); }
+    const route = []; let cur = L.g + '';
+    while (seen.get(cur)) { const [p, j] = seen.get(cur); route.unshift(j); cur = p + ''; }
+    for (const j of route) { apply(j); await new Promise(r => setTimeout(r, 900)); }
+  };
+  function refresh() { for (const b of btns) b.disabled = blocked(OPS[b.op].f(z)); }
+
+  function apply(i) {
+    const b = btns[i];
+    if (!b || b.disabled || anim || done) return;
+    const to = OPS[b.op].f(z);
+    anim = { from: z.slice(), to, op: b.op, t: 0 };
+    moves++;
+    K.sfx.note(OPS[b.op].kind === 'add' ? 600 : 420, 0.12);
+  }
+
+  // position during the move: multiplying sweeps around the origin, adding slides, conj mirrors
+  function animPos(a) {
+    const e = K.ease(Math.min(1, a.t)), O = OPS[a.op];
+    if (O.kind === 'mul') {
+      const r = Math.hypot(...a.from), th = Math.atan2(a.from[1], a.from[0]);
+      const rr = r * (1 + (O.sc - 1) * e), tt = th + O.rot * Math.PI / 180 * e;
+      return [rr * Math.cos(tt), rr * Math.sin(tt)];
+    }
+    if (O.kind === 'conj') return [a.from[0], a.from[1] * (1 - 2 * e)];
+    return [a.from[0] + (a.to[0] - a.from[0]) * e, a.from[1] + (a.to[1] - a.from[1]) * e];
+  }
+
+  function update(dt) {
+    if (!anim) return;
+    anim.t += dt / 0.7;
+    if (anim.t < 1) return;
+    z = anim.to; anim = null; trail.push(z.slice());
+    K.burst(sx(z[0]), sy(z[1]), '#a66bff', 8, 120, 3, false);
+    if (same(z, L.g)) return win();
+    refresh();
+  }
+
+  function win() {
+    done = true; K.state = 'over';
+    const st = moves <= par ? 3 : moves <= par + 2 ? 2 : 1;
+    saved[lv] = Math.max(saved[lv] || 0, st); K.save('stars', saved);
+    K.burst(sx(z[0]), sy(z[1]), '#ffd34d', 40, 340, 5); K.burst(sx(z[0]), sy(z[1]), '#a66bff', 28, 260);
+    K.sfx.win();
+    setTimeout(() => {
+      const b = [];
+      if (lv < LEVELS.length - 1) b.push({ label: 'Next level', on: () => { K.state = 'play'; load(lv + 1); } });
+      b.push({ label: 'Replay', ghost: true, on: () => { K.state = 'play'; load(lv); } }, { label: 'Levels', ghost: true, on: menu });
+      K.overlay({ kicker: `Level ${lv + 1}`, title: st === 3 ? 'Shortest path!' : 'Made it!', sub: `${moves} move${moves === 1 ? '' : 's'}` + (st < 3 ? `. It can be done in ${par}.` : '.'),
+        html: `<div style="font-size:2.4em;letter-spacing:.15em;color:#ffd34d;text-shadow:0 0 .4em rgba(255,211,77,.6)">${'★'.repeat(st)}<span style="opacity:.2">${'★'.repeat(3 - st)}</span></div>`, buttons: b });
+    }, 900);
+  }
+
+  function star(c, x, y, r, rot) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) { const a = rot + i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    c.closePath(); c.fill();
+  }
+
+  function draw(c, t) {
+    const lvl = L || LEVELS[6];
+    // plane
+    K.panel(c, sx(-R) - 16, sy(R) - 16, 2 * R * U + 32, 2 * R * U + 32, { r: 18, fill: 'rgba(6,6,24,.55)' });
+    for (let k = -R; k <= R; k++) {
+      c.fillStyle = k ? 'rgba(255,255,255,.06)' : 'rgba(255,255,255,.5)';
+      c.fillRect(sx(k) - (k ? 0.5 : 1), sy(R), k ? 1 : 2, 2 * R * U);
+      c.fillRect(sx(-R), sy(k) - (k ? 0.5 : 1), 2 * R * U, k ? 1 : 2);
+    }
+    // rings at |z| = 1..6 show multiplying keeps you on a circle
+    for (let r = 1; r <= R; r++) { c.strokeStyle = 'rgba(166,107,255,.07)'; c.lineWidth = 1; c.beginPath(); c.arc(CX, CY, r * U, 0, 7); c.stroke(); }
+    for (let k = -R; k <= R; k += 2) if (k) {
+      K.text(String(k).replace('-', '−'), sx(k), CY + 13, 10, 'rgba(255,255,255,.45)');
+      K.text((k < 0 ? '−' : '') + (Math.abs(k) === 1 ? '' : Math.abs(k)) + 'i', CX - 16, sy(k), 10, 'rgba(255,255,255,.45)');
+    }
+    K.text('Re', sx(R) + 4, CY - 12, 11, 'rgba(255,255,255,.6)');
+    K.text('Im', CX + 16, sy(R) + 2, 11, 'rgba(255,255,255,.6)');
+    // black holes
+    for (const [a, b] of lvl.b) {
+      const x = sx(a), y = sy(b);
+      const g = c.createRadialGradient(x, y, 2, x, y, 20);
+      g.addColorStop(0, '#000'); g.addColorStop(0.6, '#140428'); g.addColorStop(1, 'rgba(166,107,255,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, 20, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(200,150,255,.6)'; c.lineWidth = 1.5;
+      for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(x, y, 9 + k * 4, t * (2 + k) + k, t * (2 + k) + k + 2); c.stroke(); }
+    }
+    // goal
+    c.save(); c.fillStyle = '#ffd34d'; c.shadowColor = '#ffd34d'; c.shadowBlur = 22; star(c, sx(lvl.g[0]), sy(lvl.g[1]), 15 + Math.sin(t * 3) * 2, t * 0.6); c.restore();
+    if (!L) { K.orb(c, sx(lvl.s[0]), sy(lvl.s[1]), 11, '#4fd1ff', { glow: 22 }); return; }
+    // trail
+    for (let i = 1; i < trail.length; i++) {
+      c.strokeStyle = 'rgba(79,209,255,.3)'; c.setLineDash([4, 6]); c.lineWidth = 2;
+      c.beginPath(); c.moveTo(sx(trail[i - 1][0]), sy(trail[i - 1][1])); c.lineTo(sx(trail[i][0]), sy(trail[i][1])); c.stroke(); c.setLineDash([]);
+    }
+    // move preview for the hovered button
+    const hov = btns.findIndex(b => !b.disabled && K.ptr.active && K.hit(b, K.ptr.x, K.ptr.y));
+    if (hov >= 0 && !anim) {
+      const a = { from: z, to: OPS[btns[hov].op].f(z), op: btns[hov].op, t: 0 }, pts = [];
+      for (let k = 0; k <= 30; k++) { a.t = k / 30; const p = animPos(a); pts.push([sx(p[0]), sy(p[1])]); }
+      c.save(); c.globalAlpha = 0.8; K.glowLine(c, pts, btns[hov].color, 2, 10); c.restore();
+      K.orb(c, sx(a.to[0]), sy(a.to[1]), 6, btns[hov].color, { glow: 12 });
+    }
+    // ship
+    const p = anim ? animPos(anim) : z;
+    c.strokeStyle = 'rgba(79,209,255,.25)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(CX, CY); c.lineTo(sx(p[0]), sy(p[1])); c.stroke();
+    K.orb(c, sx(p[0]), sy(p[1]), 11, '#4fd1ff', { glow: 24 });
+
+    // HUD
+    K.chip(22, 14, 'Level', `${lv + 1} / ${LEVELS.length}`, '#fff', { w: 96, h: 50 });
+    K.chip(128, 14, 'Moves', moves, moves <= par ? '#7ee36b' : '#ff9f43', { w: 80, h: 50 });
+    K.chip(218, 14, 'Par', par, '#a66bff', { w: 70, h: 50 });
+    K.panel(c, 298, 14, 280, 50, { r: 12, glow: 14, glowColor: 'rgba(79,209,255,.3)' });
+    K.text('z =', 330, 40, 15, 'rgba(220,228,250,.7)');
+    K.text(fmt(anim ? anim.to : z), 450, 40, 22, '#4fd1ff', { weight: 800 });
+    K.text('goal ' + fmt(L.g), 685, 120, 14, '#ffd34d', { weight: 700 });
+    K.button(retryBtn); K.button(levelsBtn);
+    btns.forEach(b => K.button(b));
+  }
+})();
+</script>
+</body>
+</html>
