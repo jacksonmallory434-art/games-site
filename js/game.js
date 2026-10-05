@@ -33,7 +33,6 @@ async function init() {
   frame.style.aspectRatio = `${g.width} / ${g.height}`;
   // Keep tall (phone-shaped) games from being taller than the screen.
   frame.style.maxWidth = `calc(80vh * ${g.width / g.height})`;
-  frame.style.marginInline = 'auto';
   const iframe = document.createElement('iframe');
   iframe.src = '/' + g.embed;
   iframe.title = g.title;
@@ -42,10 +41,28 @@ async function init() {
   iframe.addEventListener('load', () => frame.classList.add('loaded'));
   frame.appendChild(iframe);
 
+  // On small screens, run the game at its full design size and scale it down,
+  // so nothing inside it gets cut off. Bigger screens just stretch the game.
+  const fit = () => {
+    const w = frame.clientWidth, h = frame.clientHeight;
+    const s = Math.min(1, w / g.width, h / g.height) || 1;
+    iframe.style.width = w / s + 'px';
+    iframe.style.height = h / s + 'px';
+    iframe.style.transform = s < 1 ? `scale(${s})` : '';
+  };
+  new ResizeObserver(fit).observe(frame);
+
+  // Wide games are small on a phone held upright.
+  if (g.width > g.height && matchMedia('(max-width: 640px) and (orientation: portrait)').matches) {
+    document.getElementById('mobile').textContent = 'Tip: tap Fullscreen and turn your phone sideways';
+  }
+
   // Fullscreen, with a fallback for iPhones that don't support it.
   document.getElementById('fs').addEventListener('click', () => {
     if (frame.requestFullscreen) {
-      frame.requestFullscreen();
+      frame.requestFullscreen().then(() => {
+        if (g.width > g.height && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      }, () => frame.classList.toggle('fake-fs'));
     } else {
       frame.classList.toggle('fake-fs');
     }
